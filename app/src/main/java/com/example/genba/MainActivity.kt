@@ -688,3 +688,4 @@ fun MasterPage(robots: List<RobotMaster>, onUpdate: (List<RobotMaster>) -> Unit)
         Spacer(Modifier.height(60.dp))
     }
 }
+
