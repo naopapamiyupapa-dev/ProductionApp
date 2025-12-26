@@ -1,3 +1,4 @@
+// Version 1.0.0
 package com.example.genba
 
 import android.os.Bundle
@@ -28,20 +29,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dpS
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.*
 import kotlin.math.*
 
-// --- カラー定義 (Version 2.0: 現場視認性重視 + ロボット10台対応) ---
+// --- カラー定義 ---
 val ColorPrimary = Color(0xFF007AFF) // 青
 val ColorBg = Color(0xFF000000)      // 黒
 val ColorCard = Color(0xFF1C1C1E)    // グレー
 val ColorText = Color(0xFFFFFFFF)    // 白
-val ColorAccent = Color(0xFF32D74B)  // ライムグリーン (視認性最強)
+val ColorAccent = Color(0xFF32D74B)  // ライムグリーン
 val ColorWarn = Color(0xFFFF9F0A)    // オレンジ
 val ColorDanger = Color(0xFFFF453A)  // 赤
-val ColorLabel = Color(0xFFF2F2F7)   // 明るいグレー
+val ColorLabel = Color(0xFFF2F2F7)   // 高輝度グレー
 val ColorBorder = Color(0xFF48484A)  // 枠線
 val ColorInputBg = Color(0xFF2C2C2E) // 入力背景
 
@@ -92,14 +93,6 @@ fun MasterCoord.toRobotPoint() = RobotPoint(
     r = r.toDoubleOrNull() ?: 0.0
 )
 
-// ロボット1台分のデータ構造
-data class RobotMaster(
-    var id: String = UUID.randomUUID().toString(),
-    var robotName: String = "Robot",
-    var ufSlots: List<MasterCoord> = List(10) { MasterCoord("UF$it") },
-    var tfSlots: List<MasterCoord> = List(10) { MasterCoord("TF$it") }
-)
-
 data class ActionData(
     val id: String = UUID.randomUUID().toString(),
     var name: String = "",
@@ -110,10 +103,8 @@ data class ActionData(
 @Composable
 fun MainScreen() {
     var currentTab by remember { mutableStateOf("prod") }
-    // ロボット10台分のデータを初期化
-    var robots by remember { 
-        mutableStateOf(List(10) { i -> RobotMaster(robotName = "${i + 1}号機") }) 
-    }
+    var masterUF by remember { mutableStateOf(List(10) { MasterCoord("UF$it") }) }
+    var masterTF by remember { mutableStateOf(List(10) { MasterCoord("TF$it") }) }
 
     Scaffold(
         bottomBar = {
@@ -134,8 +125,8 @@ fun MainScreen() {
                 "plan" -> PlanPage()
                 "time" -> TimeConverterPage()
                 "chart" -> TimeChartPage()
-                "coord" -> CoordPage(robots)
-                "master" -> MasterPage(robots) { updatedRobots -> robots = updatedRobots }
+                "coord" -> CoordPage(masterUF, masterTF)
+                "master" -> MasterPage(masterUF, masterTF, { masterUF = it }, { masterTF = it })
             }
         }
     }
@@ -412,7 +403,7 @@ fun TimeChartPage() {
 }
 
 @Composable
-fun CoordPage(robots: List<RobotMaster>) {
+fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
     var x1 by remember { mutableStateOf("500") }; var y1 by remember { mutableStateOf("0") }; var z1 by remember { mutableStateOf("500") }
     var w1 by remember { mutableStateOf("0") }; var p1 by remember { mutableStateOf("-90") }; var r1 by remember { mutableStateOf("0") }
     var x2 by remember { mutableStateOf("") }; var y2 by remember { mutableStateOf("") }; var z2 by remember { mutableStateOf("") }
@@ -421,16 +412,17 @@ fun CoordPage(robots: List<RobotMaster>) {
     var calcValue by remember { mutableStateOf("20") }; var points by remember { mutableStateOf(listOf<List<String>>()) }
     var offDist by remember { mutableStateOf("50") }
 
-    // どのロボットのマスタデータを参照するか
-    var selectedRobotIdx by remember { mutableStateOf(0) }
-    var showRobotMenu by remember { mutableStateOf(false) }
-
-    // UF/TFスロット選択
-    var selectedUfIdx by remember { mutableStateOf(0) }
-    var selectedTfIdx by remember { mutableStateOf(0) }
-    var showUfMenu by remember { mutableStateOf(false) }
-    var showTfMenu by remember { mutableStateOf(false) }
+    var selectedUFIdx by remember { mutableStateOf(0) }
+    var selectedTFIdx by remember { mutableStateOf(0) }
+    var showUFMenu by remember { mutableStateOf(false) }
+    var showTFMenu by remember { mutableStateOf(false) }
     
+    // 計算用スロット選択用（オフセット計算時に参照するスロット）
+    var selectedCalcUfSlot by remember { mutableStateOf(0) }
+    var selectedCalcTfSlot by remember { mutableStateOf(0) }
+    var showCalcUfMenu by remember { mutableStateOf(false) }
+    var showCalcTfMenu by remember { mutableStateOf(false) }
+
     var highlightedRows by remember { mutableStateOf(setOf<Int>()) }
 
     fun calc() {
@@ -445,10 +437,10 @@ fun CoordPage(robots: List<RobotMaster>) {
     fun applyOffset(mode: String, sign: Int) {
         val d = (offDist.toDoubleOrNull() ?: 0.0) * sign
         val p1_x = x1.toDoubleOrNull() ?: 0.0; val p1_y = y1.toDoubleOrNull() ?: 0.0; val p1_z = z1.toDoubleOrNull() ?: 0.0
-        val p1_w = w1.toDoubleOrNull() ?: 0.0; val p1_p = p1.toDoubleOrNull() ?: 0.0
+        val p1_w = w1.toDoubleOrNull() ?: 0.0; val p1_p = p1.toDoubleOrNull() ?: 0.0; val p1_r = r1.toDoubleOrNull() ?: 0.0
         
-        val robot = robots[selectedRobotIdx]
-        val master = if (mode == "user") robot.ufSlots[selectedUfIdx].toRobotPoint() else robot.tfSlots[selectedTfIdx].toRobotPoint()
+        // 指定されたスロットのマスタ座標を参照
+        val master = if (mode == "user") masterUF[selectedCalcUfSlot].toRobotPoint() else masterTF[selectedCalcTfSlot].toRobotPoint()
 
         if (mode == "user") {
             x2 = (p1_x + master.x).toString(); y2 = (p1_y + master.y).toString(); z2 = (p1_z + master.z + d).toString()
@@ -461,54 +453,55 @@ fun CoordPage(robots: List<RobotMaster>) {
 
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
         PageTitle("座標分割・逃げ (Split/Offset)")
-        
-        // ロボット選択ドロップダウン (トップに配置)
-        Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-            Button(onClick = { showRobotMenu = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
-                Text("参照ロボット: ${robots[selectedRobotIdx].robotName} ▼", color = ColorAccent, fontWeight = FontWeight.Black)
-            }
-            DropdownMenu(expanded = showRobotMenu, onDismissRequest = { showRobotMenu = false }) {
-                robots.forEachIndexed { i, robot ->
-                    DropdownMenuItem(text = { Text("${i + 1}: ${robot.robotName}") }, onClick = { selectedRobotIdx = i; showRobotMenu = false })
-                }
-            }
-        }
-
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { x1=""; y1=""; z1=""; w1=""; p1=""; r1=""; x2=""; y2=""; z2=""; w2=""; p2=""; r2="" }) { Text("座標クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) }
         }
-        
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
             Column(modifier = Modifier.padding(12.dp)) {
-                // スロット読込
+                // スロット読込Row
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.weight(1f)) {
-                        Button(onClick = { showUfMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
-                            Text("UF$selectedUfIdx 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ColorText)
+                        Button(onClick = { showUFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
+                            Text("UF$selectedUFIdx 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ColorText)
                         }
-                        DropdownMenu(expanded = showUfMenu, onDismissRequest = { showUfMenu = false }) {
-                            robots[selectedRobotIdx].ufSlots.forEachIndexed { i, d ->
-                                DropdownMenuItem(text = { Text("Slot $i: ${d.name}") }, onClick = { x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; selectedUfIdx=i; showUfMenu = false })
-                            }
+                        DropdownMenu(expanded = showUFMenu, onDismissRequest = { showUFMenu = false }) {
+                            masterUF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("Slot $i: ${d.name}") }, onClick = { selectedUFIdx = i; x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; showUFMenu = false }) }
                         }
                     }
                     Box(Modifier.weight(1f)) {
-                        Button(onClick = { showTfMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
-                            Text("TF$selectedTfIdx 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ColorText)
+                        Button(onClick = { showTFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
+                            Text("TF$selectedTFIdx 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ColorText)
                         }
-                        DropdownMenu(expanded = showTfMenu, onDismissRequest = { showTfMenu = false }) {
-                            robots[selectedRobotIdx].tfSlots.forEachIndexed { i, d ->
-                                DropdownMenuItem(text = { Text("Slot $i: ${d.name}") }, onClick = { x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; selectedTfIdx=i; showTfMenu = false })
-                            }
+                        DropdownMenu(expanded = showTFMenu, onDismissRequest = { showTFMenu = false }) {
+                            masterTF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("Slot $i: ${d.name}") }, onClick = { selectedTFIdx = i; x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; showTFMenu = false }) }
                         }
                     }
                 }
-                
                 Text("始点 P1", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
                 CoordInputGrid(listOf(x1,y1,z1,w1,p1,r1)) { i,v -> when(i){0->x1=v;1->y1=v;2->z1=v;3->w1=v;4->p1=v;5->r1=v} }
                 
+                // --- 逃げ計算セクション ---
                 Box(Modifier.fillMaxWidth().padding(vertical = 12.dp).background(Color(0xFF252A30), RoundedCornerShape(12.dp)).border(2.dp, ColorPrimary, RoundedCornerShape(12.dp)).padding(12.dp)) {
                     Column {
+                        // 計算用スロット選択
+                        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(onClick = { showCalcUfMenu = true }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, ColorBorder)) {
+                                    Text("UF$selectedCalcUfSlot 参照", fontSize = 10.sp, color = ColorLabel)
+                                }
+                                DropdownMenu(expanded = showCalcUfMenu, onDismissRequest = { showCalcUfMenu = false }) {
+                                    masterUF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("UF$i: ${d.name}") }, onClick = { selectedCalcUfSlot = i; showCalcUfMenu = false }) }
+                                }
+                            }
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(onClick = { showCalcTfMenu = true }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, ColorBorder)) {
+                                    Text("TF$selectedCalcTfSlot 参照", fontSize = 10.sp, color = ColorLabel)
+                                }
+                                DropdownMenu(expanded = showCalcTfMenu, onDismissRequest = { showCalcTfMenu = false }) {
+                                    masterTF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("TF$i: ${d.name}") }, onClick = { selectedCalcTfSlot = i; showCalcTfMenu = false }) }
+                                }
+                            }
+                        }
                         InputGrid("逃げ距離(mm)", null, offDist) { offDist = it }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { applyOffset("user", 1) }, Modifier.weight(1f).height(48.dp)) { Text("User Z+", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }
@@ -581,111 +574,41 @@ fun CoordInputGrid(values: List<String>, onUpdate: (Int, String) -> Unit) {
 }
 
 @Composable
-fun MasterPage(robots: List<RobotMaster>, onUpdate: (List<RobotMaster>) -> Unit) {
-    var selectedRobotIdx by remember { mutableStateOf(0) }
-    var selectedSlotIdx by remember { mutableStateOf(0) }
-    var showRobotMenu by remember { mutableStateOf(false) }
-
-    val robot = robots[selectedRobotIdx]
-    var mRobotName by remember(selectedRobotIdx) { mutableStateOf(robot.robotName) }
-    
-    // スロット編集用
-    var mSlotName by remember(selectedRobotIdx, selectedSlotIdx) { 
-        mutableStateOf(robot.ufSlots[selectedSlotIdx].name) 
-    }
-    var mx by remember(selectedRobotIdx, selectedSlotIdx) { mutableStateOf(robot.ufSlots[selectedSlotIdx].x) }
-    var my by remember(selectedRobotIdx, selectedSlotIdx) { mutableStateOf(robot.ufSlots[selectedSlotIdx].y) }
-    var mz by remember(selectedRobotIdx, selectedSlotIdx) { mutableStateOf(robot.ufSlots[selectedSlotIdx].z) }
-    var mw by remember(selectedRobotIdx, selectedSlotIdx) { mutableStateOf(robot.ufSlots[selectedSlotIdx].w) }
-    var mp by remember(selectedRobotIdx, selectedSlotIdx) { mutableStateOf(robot.ufSlots[selectedSlotIdx].p) }
-    var mr by remember(selectedRobotIdx, selectedSlotIdx) { mutableStateOf(robot.ufSlots[selectedSlotIdx].r) }
+fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdateUF: (List<MasterCoord>) -> Unit, onUpdateTF: (List<MasterCoord>) -> Unit) {
+    var selectedSlot by remember { mutableStateOf(0) }; var mName by remember { mutableStateOf("") }
+    var mx by remember { mutableStateOf("0") }; var my by remember { mutableStateOf("0") }; var mz by remember { mutableStateOf("0") }
+    var mw by remember { mutableStateOf("0") }; var mp by remember { mutableStateOf("0") }; var mr by remember { mutableStateOf("0") }
+    fun fill(slot: Int) { val d = masterUF[slot]; mName = d.name; mx=d.x; my=d.y; mz=d.z; mw=d.w; mp=d.p; mr=d.r }
 
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("座標マスタ (ロボット10台対応)")
-        
-        // ロボット選択 & 名称設定
-        Card(colors = CardDefaults.cardColors(containerColor = ColorCard), modifier = Modifier.padding(bottom = 12.dp)) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = { showRobotMenu = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
-                        Text("編集ロボット: ${robot.robotName} ▼", color = ColorAccent, fontWeight = FontWeight.Black)
-                    }
-                    DropdownMenu(expanded = showRobotMenu, onDismissRequest = { showRobotMenu = false }) {
-                        robots.forEachIndexed { i, r ->
-                            DropdownMenuItem(text = { Text("${i + 1}: ${r.robotName}") }, onClick = { selectedRobotIdx = i; showRobotMenu = false })
-                        }
-                    }
-                }
-                
-                TextField(
-                    value = mRobotName, 
-                    onValueChange = { 
-                        mRobotName = it
-                        val newRobots = robots.toMutableList()
-                        newRobots[selectedRobotIdx] = newRobots[selectedRobotIdx].copy(robotName = it)
-                        onUpdate(newRobots)
-                    }, 
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    label = { Text("ロボット名称 (例: 1号機)", color = ColorLabel) },
-                    colors = TextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg)
-                )
-            }
-        }
-
-        // スロット編集
+        PageTitle("座標マスタ (0-9 Slots)")
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Slot番号", Modifier.weight(1f), fontSize = 13.sp, color = ColorLabel, fontWeight = FontWeight.ExtraBold)
                     (0..9).forEach { i ->
-                        Box(Modifier.size(34.dp).padding(2.dp).background(if(selectedSlotIdx==i) ColorPrimary else ColorInputBg, RoundedCornerShape(6.dp)).clickable { selectedSlotIdx=i }, contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(34.dp).padding(2.dp).background(if(selectedSlot==i) ColorPrimary else ColorInputBg, RoundedCornerShape(6.dp)).clickable { selectedSlot=i; fill(i) }, contentAlignment = Alignment.Center) {
                             Text(i.toString(), fontSize = 14.sp, fontWeight = FontWeight.Black, color = ColorText)
                         }
                     }
                 }
-                
-                TextField(value = mSlotName, onValueChange = { mSlotName = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), label = { Text("地点名称をここに入力", color = ColorLabel, fontWeight = FontWeight.Bold) }, colors = TextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg))
-                
+                TextField(value = mName, onValueChange = { mName = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), label = { Text("地点名称をここに入力", color = ColorLabel, fontWeight = FontWeight.Bold) }, colors = TextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText))
                 CoordInputGrid(listOf(mx,my,mz,mw,mp,mr)) { i,v -> when(i){0->mx=v;1->my=v;2->mz=v;3->mw=v;4->mp=v;5->mr=v} }
-                
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { 
-                            val newRobots = robots.toMutableList()
-                            val newUf = newRobots[selectedRobotIdx].ufSlots.toMutableList()
-                            newUf[selectedSlotIdx] = MasterCoord(mSlotName, mx, my, mz, mw, mp, mr)
-                            newRobots[selectedRobotIdx] = newRobots[selectedRobotIdx].copy(ufSlots = newUf)
-                            onUpdate(newRobots)
-                        }, 
-                        Modifier.weight(1f).height(52.dp), 
-                        colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)
-                    ) { Text("UFに保存", fontWeight = FontWeight.Black, color = ColorBg) }
-                    
-                    Button(
-                        onClick = { 
-                            val newRobots = robots.toMutableList()
-                            val newTf = newRobots[selectedRobotIdx].tfSlots.toMutableList()
-                            newTf[selectedSlotIdx] = MasterCoord(mSlotName, mx, my, mz, mw, mp, mr)
-                            newRobots[selectedRobotIdx] = newRobots[selectedRobotIdx].copy(tfSlots = newTf)
-                            onUpdate(newRobots)
-                        }, 
-                        Modifier.weight(1f).height(52.dp), 
-                        colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)
-                    ) { Text("TFに保存", fontWeight = FontWeight.Black, color = ColorText) }
+                    Button(onClick = { onUpdateUF(masterUF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) }) }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)) { Text("UFに保存", fontWeight = FontWeight.Black, color = ColorBg) }
+                    Button(onClick = { onUpdateTF(masterTF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) }) }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("TFに保存", fontWeight = FontWeight.Black, color = ColorText) }
                 }
             }
         }
-        
-        SectionTitle("登録済みサマリ (${robot.robotName})")
-        robot.ufSlots.forEachIndexed { i, d ->
+        SectionTitle("登録済みサマリ")
+        masterUF.forEachIndexed { i, d ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(ColorCard, RoundedCornerShape(8.dp)).padding(10.dp)) {
                 Text("Slot $i:", Modifier.width(55.dp), fontSize = 11.sp, color = ColorAccent, fontWeight = FontWeight.Black)
-                Text("UF [${d.name}] / TF [${robot.tfSlots[i].name}]", fontSize = 11.sp, color = ColorText, fontWeight = FontWeight.ExtraBold)
+                Text("UF [${d.name}] / TF [${masterTF[i].name}]", fontSize = 11.sp, color = ColorText, fontWeight = FontWeight.ExtraBold)
             }
         }
         Spacer(Modifier.height(24.dp))
-        Text(text = "Version 2.0", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ColorLabel, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        Text(text = "Version 1.0.0", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ColorLabel, fontSize = 14.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(60.dp))
     }
 }
-
