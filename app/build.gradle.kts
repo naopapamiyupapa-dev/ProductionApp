@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.genba"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.1"
+        versionCode = 11
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -60,6 +60,12 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.activity.compose)
     implementation("androidx.compose.material:material-icons-extended")
+    
+    // ViewModel support
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    
+    // JSON保存用ライブラリ
+    implementation("com.google.code.gson:gson:2.13.2")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
