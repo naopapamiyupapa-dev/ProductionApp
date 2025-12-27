@@ -1,0 +1,25 @@
+name: Sync to Google Drive
+
+on:
+  push:
+    branches:
+      - main  # メインブランチに更新があったら実行
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Zip Project
+        # プロジェクト全体を圧縮！AI Studioが読み込みやすい形にするよ✨
+        run: zip -r production_app.zip . -x "*.git*"
+
+      - name: Upload to Google Drive
+        uses: Jokanemono/google-drive-upload-git-action@v0.1.1
+        with:
+          service_account_json: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
+          file_path: production_app.zip
+          overwrite: true
