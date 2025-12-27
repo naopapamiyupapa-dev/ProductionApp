@@ -1,0 +1,59 @@
+name: Backup to Google Drive
+
+on:
+  push:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Create ZIP archive
+      run: |
+        REPO_NAME="${GITHUB_REPOSITORY##*/}"
+        DATE=$(date +%Y%m%d_%H%M%S)
+        ZIP_NAME="${REPO_NAME}_${DATE}.zip"
+        
+        zip -r "${ZIP_NAME}" . -x "*.git*"
+        
+        echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+        echo "ZIP_PATH=${ZIP_NAME}" >> $GITHUB_ENV
+    
+    - name: Upload to Google Drive
+      env:
+        GAS_URL: ${{ secrets.GAS_WEBHOOK_URL }}
+      run: |
+        BASE64_DATA=$(base64 -w 0 "${ZIP_PATH}")
+        
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${GAS_URL}" \
+          -H "Content-Type: application/json" \
+          -d "{\"file\":\"${BASE64_DATA}\",\"filename\":\"${ZIP_NAME}\"}")
+        
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | head -n-1)
+        
+        echo "HTTP Status: ${HTTP_CODE}"
+        echo "Response: ${BODY}"
+        
+        if [ "${HTTP_CODE}" != "200" ]; then
+          echo "❌ Upload failed with status ${HTTP_CODE}"
+          exit 1
+        fi
+        
+        if echo "${BODY}" | grep -q '"success":true'; then
+          echo "✅ Upload successful!"
+          echo "${BODY}" | grep -o '"url":"[^"]*"'
+        else
+          echo "❌ Upload failed!"
+          echo "${BODY}"
+          exit 1
+        fi
