@@ -26,39 +26,54 @@ jobs:
         zip -r "${ZIP_NAME}" . -x "*.git*"
         
         echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-        echo "ZIP_PATH=${ZIP_NAME}" >> $GITHUB_ENV
     
     - name: Upload to Google Drive
       env:
         GAS_URL: ${{ secrets.GAS_WEBHOOK_URL }}
       run: |
-        BASE64_DATA=$(base64 -w 0 "${ZIP_PATH}")
+        python3 << 'PYTHON_SCRIPT'
+        import base64
+        import json
+        import os
+        import sys
+        import urllib.request
         
-        cat > payload.json << 'EOFMARKER'
-        {
-          "file": "BASE64_PLACEHOLDER",
-          "filename": "FILENAME_PLACEHOLDER"
+        zip_name = os.environ['ZIP_NAME']
+        gas_url = os.environ['GAS_URL']
+        
+        with open(zip_name, 'rb') as f:
+            file_data = f.read()
+        
+        base64_data = base64.b64encode(file_data).decode('utf-8')
+        
+        payload = {
+            'file': base64_data,
+            'filename': zip_name
         }
-        EOFMARKER
         
-        sed -i "s|BASE64_PLACEHOLDER|${BASE64_DATA}|g" payload.json
-        sed -i "s|FILENAME_PLACEHOLDER|${ZIP_NAME}|g" payload.json
+        json_data = json.dumps(payload).encode('utf-8')
         
-        HTTP_CODE=$(curl -s -o response.txt -w "%{http_code}" -X POST "${GAS_URL}" \
-          -H "Content-Type: application/json" \
-          --data-binary @payload.json)
+        req = urllib.request.Request(
+            gas_url,
+            data=json_data,
+            headers={'Content-Type': 'application/json'}
+        )
         
-        echo "HTTP Status: ${HTTP_CODE}"
-        cat response.txt
-        
-        if [ "${HTTP_CODE}" != "200" ]; then
-          echo "❌ Upload failed"
-          exit 1
-        fi
-        
-        if grep -q '"success":true' response.txt; then
-          echo "✅ Upload successful!"
-        else
-          echo "❌ Upload failed"
-          exit 1
-        fi
+        try:
+            with urllib.request.urlopen(req) as response:
+                status = response.status
+                body = response.read().decode('utf-8')
+                
+                print(f"HTTP Status: {status}")
+                print(f"Response: {body}")
+                
+                if status == 200 and '"success":true' in body:
+                    print("✅ Upload successful!")
+                    sys.exit(0)
+                else:
+                    print("❌ Upload failed!")
+                    sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            sys.exit(1)
+        PYTHON_SCRIPT
