@@ -1,11 +1,10 @@
-// Version 1.1.1 - Dashboard Interaction Fix & Version Update
+// Version 1.1.2 - Final Stability Patch: Input Improvement & Function Restoration
 package com.example.genba
 
 import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -25,7 +24,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,21 +39,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,16 +131,14 @@ fun Modifier.cyberNeonBorder(
     )
 }
 
-data class RobotPoint(val x: Double, val y: Double, val z: Double, val w: Double, val p: Double, val r: Double)
 data class MasterCoord(var name: String = "", var x: String = "0", var y: String = "0", var z: String = "0", var w: String = "0", var p: String = "0", var r: String = "0")
-fun MasterCoord.toRobotPoint() = RobotPoint(x = x.toDoubleOrNull() ?: 0.0, y = y.toDoubleOrNull() ?: 0.0, z = z.toDoubleOrNull() ?: 0.0, w = w.toDoubleOrNull() ?: 0.0, p = p.toDoubleOrNull() ?: 0.0, r = r.toDoubleOrNull() ?: 0.0)
 data class ActionData(val id: String = UUID.randomUUID().toString(), var name: String = "", var delay: String = "0", var duration: String = "1.0")
 data class LapRecord(val timestamp: Long, val lapTime: Double, val isAboveTarget: Boolean)
 
 class GenbaViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
     private val gson = Gson()
-    private val PREF_NAME = "GenbaToolPrefs_V110"
+    private val PREF_NAME = "GenbaToolPrefs_V112"
 
     var masterUF by mutableStateOf(List(10) { MasterCoord("UF$it") })
     var masterTF by mutableStateOf(List(10) { MasterCoord("TF$it") })
@@ -154,6 +149,15 @@ class GenbaViewModel(application: Application) : AndroidViewModel(application) {
     var mechInputMm by mutableStateOf("1.0")
     var targetTact by mutableStateOf("30.0")
     var cycleHistory by mutableStateOf(listOf<LapRecord>())
+    
+    var prodCycle by mutableStateOf("30")
+    var prodRate by mutableStateOf("85")
+    var prodHours by mutableStateOf("8")
+    
+    var planTarget by mutableStateOf("18000")
+    var planDays by mutableStateOf("20")
+    var planHours by mutableStateOf("16")
+    var planRate by mutableStateOf("80")
 
     init { loadFromPrefs() }
 
@@ -211,12 +215,12 @@ fun MainScreen(viewModel: GenbaViewModel = viewModel()) {
             ) { targetTab ->
                 when (targetTab) {
                     "home" -> DashboardPage { focusManager.clearFocus(); currentTab = it }
-                    "cycle" -> CycleTimePage(viewModel) { currentTab = "home" }
+                    "cycle" -> TimerPage(viewModel) { currentTab = "home" }
                     "coord" -> CoordPage(viewModel.masterUF, viewModel.masterTF) { currentTab = "home" }
                     "master" -> MasterPage(viewModel.masterUF, viewModel.masterTF, onUpdateUF = { viewModel.saveUF(it) }, onUpdateTF = { viewModel.saveTF(it) }) { currentTab = "home" }
-                    "prod" -> ProductivityPage { currentTab = "home" }
-                    "plan" -> PlanPage { currentTab = "home" }
-                    "mech" -> MechanicalPage(viewModel) { currentTab = "home" }
+                    "prod" -> ProductivityPage(viewModel) { currentTab = "home" }
+                    "plan" -> PlanPage(viewModel) { currentTab = "home" }
+                    "mech" -> MechPage(viewModel) { currentTab = "home" }
                     "time" -> TimeConverterPage { currentTab = "home" }
                     "chart" -> TimeChartPage { currentTab = "home" }
                 }
@@ -240,7 +244,7 @@ fun RowScope.TabItem(label: String, icon: ImageVector, id: String, current: Stri
 fun DashboardPage(onNavigate: (String) -> Unit) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("現場管理ツール EX", color = ColorAccent, fontSize = 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 4.dp))
-        Text("Ver 1.1.1 Maintenance Update", color = ColorLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Ver 1.1.2 Final Stability Patch", color = ColorLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(24.dp))
         DashboardSection("生産管理", listOf(DashTileData("生産性", "効率・OEE算出", Icons.Default.Assessment, "prod"), DashTileData("計画", "出来高シミュレーション", Icons.Default.EditCalendar, "plan"), DashTileData("計測", "サイクルタイム計測", Icons.Default.Timer, "cycle", isNew = true)), onNavigate)
         DashboardSection("技術計算", listOf(DashTileData("メカ", "パルス/距離変換", Icons.Default.SettingsInputComponent, "mech"), DashTileData("座標", "分割・逃げ計算", Icons.Default.Grid4x4, "coord"), DashTileData("時間", "単位一括変換", Icons.Default.Update, "time")), onNavigate)
@@ -265,9 +269,6 @@ fun DashboardSection(title: String, tiles: List<DashTileData>, onNavigate: (Stri
     }
 }
 
-/**
- * ダッシュボードタイルの修正：クリック判定を最前面に配置し、視覚フィードバックを追加
- */
 @Composable
 fun DashboardTile(data: DashTileData, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var isPressed by remember { mutableStateOf(false) }
@@ -282,7 +283,7 @@ fun DashboardTile(data: DashTileData, modifier: Modifier = Modifier, onClick: ()
             .background(ColorCard)
             .clickable(
                 interactionSource = interactionSource,
-                indication = rememberRipple(bounded = true, color = ColorPrimary),
+                indication = ripple(bounded = true, color = ColorPrimary),
                 role = Role.Button,
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -315,14 +316,23 @@ fun DashboardTile(data: DashTileData, modifier: Modifier = Modifier, onClick: ()
 @Composable
 fun PageHeader(title: String, onBack: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack, modifier = Modifier.cyberNeonBorder(shape = RoundedCornerShape(50)).size(40.dp)) { Icon(Icons.Default.Home, "Home", tint = ColorAccent) }
-        Text(text = title, color = ColorAccent, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Spacer(Modifier.width(40.dp))
+        Button(
+            onClick = onBack,
+            modifier = Modifier.height(40.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg),
+            contentPadding = PaddingValues(horizontal = 12.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = ColorAccent, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("← ホーム", color = ColorAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(text = title, color = ColorAccent, fontSize = 18.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Spacer(Modifier.width(80.dp))
     }
 }
 
 @Composable
-fun CycleTimePage(viewModel: GenbaViewModel, onBack: () -> Unit) {
+fun TimerPage(viewModel: GenbaViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var isRunning by remember { mutableStateOf(false) }
@@ -333,7 +343,7 @@ fun CycleTimePage(viewModel: GenbaViewModel, onBack: () -> Unit) {
     val target = viewModel.targetTact.toDoubleOrNull() ?: 30.0
     val isOver = displayTime > target
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        PageHeader("サイクルタイム計測", onBack)
+        PageHeader("計測", onBack)
         InputGrid("目標タクトタイム (s)", null, viewModel.targetTact, labelColor = ColorWarn) { viewModel.saveTargetTact(it) }
         Box(Modifier.fillMaxWidth().height(180.dp).cyberNeonBorder(isError = isOver).background(ColorCard, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -363,7 +373,7 @@ fun shareCycleHistoryAsCsv(context: Context, history: List<LapRecord>) {
 }
 
 @Composable
-fun MechanicalPage(viewModel: GenbaViewModel, onBack: () -> Unit) {
+fun MechPage(viewModel: GenbaViewModel, onBack: () -> Unit) {
     val ppr = viewModel.mechPulsePerRot.toDoubleOrNull() ?: 1.0
     val gearN = viewModel.mechGearRatioN.toDoubleOrNull() ?: 1.0
     val lead = viewModel.mechLead.toDoubleOrNull() ?: 1.0
@@ -384,42 +394,39 @@ fun MechanicalPage(viewModel: GenbaViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-fun ProductivityPage(onBack: () -> Unit) {
-    var t1 by remember { mutableStateOf("30") }; var t2 by remember { mutableStateOf("85") }; var t3 by remember { mutableStateOf("8") }
-    var o1 by remember { mutableStateOf("480") }; var o2 by remember { mutableStateOf("420") }; var o3 by remember { mutableStateOf("30") }
-    var o4 by remember { mutableStateOf("700") }; var o5 by remember { mutableStateOf("680") }
-    val cycle = t1.toDoubleOrNull() ?: 0.0; val rate = (t2.toDoubleOrNull() ?: 0.0) / 100.0; val hours = t3.toDoubleOrNull() ?: 0.0
+fun ProductivityPage(viewModel: GenbaViewModel, onBack: () -> Unit) {
+    val cycle = viewModel.prodCycle.toDoubleOrNull() ?: 0.0; val rate = (viewModel.prodRate.toDoubleOrNull() ?: 0.0) / 100.0; val hours = viewModel.prodHours.toDoubleOrNull() ?: 0.0
     val resTA = if (rate > 0) cycle / rate else 0.0; val targetOutput = if (cycle > 0) (hours * 3600.0 / cycle) * rate else 0.0
     val resTC = if (hours > 0) targetOutput / hours else 0.0
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         PageHeader("生産性・効率", onBack)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { t1=""; t2=""; t3="" }) { Text("仕事量クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { viewModel.prodCycle=""; viewModel.prodRate=""; viewModel.prodHours="" }) { Text("仕事量クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) } }
         SectionTitle("【エリア①】仕事量計算")
-        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { InputGrid("瞬間サイクル (Cycle)", "秒/台", t1) { t1 = it }; InputGrid("目標稼働率 (%)", null, t2) { t2 = it }; InputGrid("実稼働時間 (時間/日)", null, t3, imeAction = ImeAction.Done) { t3 = it }; ResItem("① 目標タクトタイム", String.format("%.1f", resTA), "秒/台"); ResItem("② 1日の目標台数", targetOutput.toInt().toString(), "台/日"); ResItem("③ 時間出来高", String.format("%.1f", resTC), "台/h") } }
+        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { InputGrid("瞬間サイクル (Cycle)", "秒/台", viewModel.prodCycle) { viewModel.prodCycle = it }; InputGrid("目標稼働率 (%)", null, viewModel.prodRate) { viewModel.prodRate = it }; InputGrid("実稼働時間 (時間/日)", null, viewModel.prodHours, imeAction = ImeAction.Done) { viewModel.prodHours = it }; ResItem("① 目標タクトタイム", String.format("%.1f", resTA), "秒/台"); ResItem("② 1日の目標台数", targetOutput.toInt().toString(), "台/日"); ResItem("③ 時間出来高", String.format("%.1f", resTC), "台/h") } }
         Spacer(modifier = Modifier.height(40.dp))
     }
 }
 
 @Composable
-fun PlanPage(onBack: () -> Unit) {
-    var p1 by remember { mutableStateOf("18000") }; var p2 by remember { mutableStateOf("20") }; var p3 by remember { mutableStateOf("16") }; var p4 by remember { mutableStateOf("80") }
-    val target = p1.toDoubleOrNull() ?: 0.0; val days = p2.toDoubleOrNull() ?: 0.0; val hours = p3.toDoubleOrNull() ?: 0.0; val rate = (p4.toDoubleOrNull() ?: 0.0) / 100.0
+fun PlanPage(viewModel: GenbaViewModel, onBack: () -> Unit) {
+    val target = viewModel.planTarget.toDoubleOrNull() ?: 0.0; val days = viewModel.planDays.toDoubleOrNull() ?: 0.0; val hours = viewModel.planHours.toDoubleOrNull() ?: 0.0; val rate = (viewModel.planRate.toDoubleOrNull() ?: 0.0) / 100.0
     val maxD = if (days > 0) target / days else 0.0; val realH = hours * rate; val resPH = if (maxD > 0) (hours * 3600.0 * rate) / maxD else 0.0
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         PageHeader("出来高計画", onBack)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { p1=""; p2=""; p3=""; p4="" }) { Text("入力クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) } }
-        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { InputGrid("月産目標 (台/月)", null, p1) { p1 = it }; InputGrid("月間稼働日数 (日)", null, p2) { p2 = it }; InputGrid("1日の労働時間 (h)", null, p3) { p3 = it }; InputGrid("目標稼働率 (%)", null, p4, imeAction = ImeAction.Done) { p4 = it }; SectionTitle("計算結果詳細"); ResItem("① 1日の最大生産能力", String.format("%.1f", maxD), "台/日"); ResItem("② 1日の実質稼働時間", String.format("%.2f", realH), "h/日"); ResItem("⑤ 1日の実際の出来高", (maxD * rate).toInt().toString(), "台/日"); ResItem("⑦ 必達目標タクト", String.format("%.1f", resPH), "秒/台", ColorPrimary) } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { viewModel.planTarget=""; viewModel.planDays=""; viewModel.planHours=""; viewModel.planRate="" }) { Text("入力クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) } }
+        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { InputGrid("月産目標 (台/月)", null, viewModel.planTarget) { viewModel.planTarget = it }; InputGrid("月間稼働日数 (日)", null, viewModel.planDays) { viewModel.planDays = it }; InputGrid("1日の労働時間 (h)", null, viewModel.planHours) { viewModel.planHours = it }; InputGrid("目標稼働率 (%)", null, viewModel.planRate, imeAction = ImeAction.Done) { viewModel.planRate = it }; SectionTitle("計算結果詳細"); ResItem("① 1日の最大生産能力", String.format("%.1f", maxD), "台/日"); ResItem("② 1日の実質稼働時間", String.format("%.2f", realH), "h/日"); ResItem("⑤ 1日の実際の出来高", (maxD * rate).toInt().toString(), "台/日"); ResItem("⑦ 必達目標タクト", String.format("%.1f", resPH), "秒/台", ColorPrimary) } }
         Spacer(modifier = Modifier.height(40.dp))
     }
 }
 
 @Composable
 fun TimeConverterPage(onBack: () -> Unit) {
-    var totalSecs by remember { mutableStateOf(0.0) }
+    var inputSecs by remember { mutableStateOf("0") }
+    val totalSecs = inputSecs.toDoubleOrNull() ?: 0.0
     val units = listOf(Triple("日 (Days)", 86400.0, ColorAccent), Triple("時間 (Hours)", 3600.0, ColorAccent), Triple("分 (Minutes)", 60.0, ColorAccent), Triple("秒 (Seconds)", 1.0, ColorAccent), Triple("ミリ秒 (ms)", 0.001, ColorAccent))
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         PageHeader("時間変換", onBack)
-        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { units.forEachIndexed { idx, (label, factor, color) -> val displayValue = if (totalSecs == 0.0) "" else { val v = totalSecs / factor; if (v == v.toLong().toDouble()) v.toLong().toString() else String.format("%.4f", v).trimEnd('0').trimEnd('.') }; InputGrid(label, null, displayValue, color, if (idx == units.size - 1) ImeAction.Done else ImeAction.Next) { totalSecs = (it.toDoubleOrNull() ?: 0.0) * factor } }; Button(onClick = { totalSecs = 0.0 }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("数値をすべてクリア", fontWeight = FontWeight.Black) } } }
+        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { units.forEachIndexed { idx, (label, factor, color) -> val displayValue = if (totalSecs == 0.0) "" else { val v = totalSecs / factor; if (v == v.toLong().toDouble()) v.toLong().toString() else String.format("%.4f", v).trimEnd('0').trimEnd('.') }; InputGrid(label, null, displayValue, color, if (idx == units.size - 1) ImeAction.Done else ImeAction.Next) { inputSecs = ((it.toDoubleOrNull() ?: 0.0) * factor).toString() } }; Button(onClick = { inputSecs = "0" }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("数値をすべてクリア", fontWeight = FontWeight.Black) } } }
         Spacer(modifier = Modifier.height(40.dp))
     }
 }
@@ -442,14 +449,22 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onBack: 
     var x1 by remember { mutableStateOf("500") }; var y1 by remember { mutableStateOf("0") }; var z1 by remember { mutableStateOf("500") }; var w1 by remember { mutableStateOf("0") }; var p1 by remember { mutableStateOf("-90") }; var r1 by remember { mutableStateOf("0") }
     var x2 by remember { mutableStateOf("") }; var y2 by remember { mutableStateOf("") }; var z2 by remember { mutableStateOf("") }; var w2 by remember { mutableStateOf("") }; var p2 by remember { mutableStateOf("") }; var r2 by remember { mutableStateOf("") }
     var splitMode by remember { mutableStateOf("dist") }; var calcValue by remember { mutableStateOf("20") }; var points by remember { mutableStateOf(listOf<List<String>>()) }; var offDist by remember { mutableStateOf("50") }
-    var selectedUFIdx by remember { mutableStateOf(0) }; var selectedTFIdx by remember { mutableStateOf(0) }; var showUFMenu by remember { mutableStateOf(false) }; var showTFMenu by remember { mutableStateOf(false) }
-    var selectedCalcUfSlot by remember { mutableStateOf(0) }; var selectedCalcTfSlot by remember { mutableStateOf(0) }; var showCalcUfMenu by remember { mutableStateOf(false) }; var showCalcTfMenu by remember { mutableStateOf(false) }
+    var selectedPointIdx by remember { mutableStateOf(-1) }
+    
+    var showUFMenu by remember { mutableStateOf(false) }; var showTFMenu by remember { mutableStateOf(false) }
+    
     fun calc() { haptic.performHapticFeedback(HapticFeedbackType.LongPress); val st = listOf(x1,y1,z1,w1,p1,r1).map { it.toDoubleOrNull() ?: 0.0 }; val en = listOf(x2,y2,z2,w2,p2,r2).map { it.toDoubleOrNull() ?: 0.0 }; val dist = sqrt((en[0]-st[0]).pow(2) + (en[1]-st[1]).pow(2) + (en[2]-st[2]).pow(2)); val v = calcValue.toDoubleOrNull() ?: 20.0; val n = if (splitMode == "dist") ceil(dist / v).toInt().coerceAtLeast(1) else v.toInt().minus(1).coerceAtLeast(1); points = (0..n).map { i -> val ratio = i.toDouble() / n; listOf(i.toString()) + (0..5).map { k -> String.format("%.3f", st[k] + (en[k]-st[k])*ratio) } } }
-    fun applyOffset(mode: String, sign: Int) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); val d = (offDist.toDoubleOrNull() ?: 0.0) * sign; val p1_x = x1.toDoubleOrNull() ?: 0.0; val p1_y = y1.toDoubleOrNull() ?: 0.0; val p1_z = z1.toDoubleOrNull() ?: 0.0; val p1_w = w1.toDoubleOrNull() ?: 0.0; val p1_p = p1.toDoubleOrNull() ?: 0.0; val p1_r = r1.toDoubleOrNull() ?: 0.0; val master = if (mode == "user") masterUF[selectedCalcUfSlot].toRobotPoint() else masterTF[selectedCalcTfSlot].toRobotPoint(); if (mode == "user") { x2 = (p1_x + master.x).toString(); y2 = (p1_y + master.y).toString(); z2 = (p1_z + master.z + d).toString() } else { val (dx, dy, dz) = RobotMath.getToolZOffsetVector(p1_w, p1_p, p1_r, d); x2 = (p1_x + master.x + dx).toString(); y2 = (p1_y + master.y + dy).toString(); z2 = (p1_z + master.z + dz).toString() }; w2 = w1; p2 = p1; r2 = r1; calc() }
+    fun applyOffset(mode: String, sign: Int) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); val d = (offDist.toDoubleOrNull() ?: 0.0) * sign; val p1_x = x1.toDoubleOrNull() ?: 0.0; val p1_y = y1.toDoubleOrNull() ?: 0.0; val p1_z = z1.toDoubleOrNull() ?: 0.0; val p1_w = w1.toDoubleOrNull() ?: 0.0; val p1_p = p1.toDoubleOrNull() ?: 0.0; val p1_r = r1.toDoubleOrNull() ?: 0.0; val (dx, dy, dz) = if (mode == "user") Triple(0.0, 0.0, d) else RobotMath.getToolZOffsetVector(p1_w, p1_p, p1_r, d); x2 = (p1_x + dx).toString(); y2 = (p1_y + dy).toString(); z2 = (p1_z + dz).toString(); w2 = w1; p2 = p1; r2 = r1; calc() }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         PageHeader("座標分割・逃げ", onBack)
-        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Box(Modifier.weight(1f)) { Button(onClick = { showUFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) { Text("UF$selectedUFIdx 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold) }; DropdownMenu(expanded = showUFMenu, onDismissRequest = { showUFMenu = false }) { masterUF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("Slot $i: ${d.name}") }, onClick = { selectedUFIdx = i; x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; showUFMenu = false }) } } } ; Box(Modifier.weight(1f)) { Button(onClick = { showTFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) { Text("TF$selectedTFIdx 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold) }; DropdownMenu(expanded = showTFMenu, onDismissRequest = { showTFMenu = false }) { masterTF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("Slot $i: ${d.name}") }, onClick = { selectedTFIdx = i; x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; showTFMenu = false }) } } } }; Text("始点 P1", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp)); CoordInputGrid(listOf(x1,y1,z1,w1,p1,r1)) { i,v -> when(i){0->x1=v;1->y1=v;2->z1=v;3->w1=v;4->p1=v;5->r1=v} }; Box(Modifier.fillMaxWidth().padding(vertical = 12.dp).background(Color(0xFF252A30), RoundedCornerShape(12.dp)).border(2.dp, ColorPrimary, RoundedCornerShape(12.dp)).padding(12.dp)) { Column { InputGrid("逃げ距離(mm)", null, offDist) { offDist = it }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { applyOffset("user", 1) }, Modifier.weight(1f).height(48.dp)) { Text("User Z+", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }; Button(onClick = { applyOffset("tool", 1) }, Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("Tool Z+ 進", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) } } } }; Text("終点 P2", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp); CoordInputGrid(listOf(x2,y2,z2,w2,p2,r2)) { i,v -> when(i){0->x2=v;1->y2=v;2->z2=v;3->w2=v;4->p2=v;5->r2=v} }; Button(onClick = { calc() }, Modifier.fillMaxWidth().padding(top = 16.dp).height(60.dp)) { Text("計算実行", fontSize = 18.sp, fontWeight = FontWeight.Black) } } }
-        if (points.isNotEmpty()) { Box(Modifier.padding(top=16.dp).background(ColorCard, RoundedCornerShape(8.dp)).border(1.dp, ColorBorder, RoundedCornerShape(8.dp))) { LazyColumn(modifier = Modifier.heightIn(max = 400.dp).horizontalScroll(rememberScrollState())) { stickyHeader { Row(Modifier.background(ColorInputBg).padding(8.dp)) { listOf("No.","X","Y","Z","W","P","R").forEach { header -> Text(header, Modifier.width(80.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.Black, fontSize = 12.sp, color = ColorAccent) } } }; itemsIndexed(points) { index, row -> Row(modifier = Modifier.fillMaxWidth().padding(8.dp)) { row.forEach { cell -> Text(text = cell, modifier = Modifier.width(80.dp), textAlign = TextAlign.Center, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = ColorText) } } } } } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { 
+            TextButton(onClick = { x1=""; y1=""; z1=""; w1=""; p1=""; r1=""; x2=""; y2=""; z2=""; w2=""; p2=""; r2=""; points=emptyList() }) { 
+                Text("座標クリア ✕", color = ColorDanger, fontWeight = FontWeight.Black) 
+            } 
+        }
+        Box(Modifier.cyberNeonBorder().padding(12.dp).background(ColorCard, RoundedCornerShape(12.dp))) { Column { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Box(Modifier.weight(1f)) { Button(onClick = { showUFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) { Text("UF 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold) }; DropdownMenu(expanded = showUFMenu, onDismissRequest = { showUFMenu = false }, modifier = Modifier.background(ColorCard)) { masterUF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("Slot $i: ${d.name}", color = ColorText) }, onClick = { x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; showUFMenu = false }) } } } ; Box(Modifier.weight(1f)) { Button(onClick = { showTFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) { Text("TF 読込 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold) }; DropdownMenu(expanded = showTFMenu, onDismissRequest = { showTFMenu = false }, modifier = Modifier.background(ColorCard)) { masterTF.forEachIndexed { i, d -> DropdownMenuItem(text = { Text("Slot $i: ${d.name}", color = ColorText) }, onClick = { x1=d.x; y1=d.y; z1=d.z; w1=d.w; p1=d.p; r1=d.r; showTFMenu = false }) } } } }; Text("始点 P1", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp)); CoordInputGrid(listOf(x1,y1,z1,w1,p1,r1)) { i,v -> when(i){0->x1=v;1->y1=v;2->z1=v;3->w1=v;4->p1=v;5->r1=v} }; Box(Modifier.fillMaxWidth().padding(vertical = 12.dp).background(Color(0xFF252A30), RoundedCornerShape(12.dp)).border(2.dp, ColorPrimary, RoundedCornerShape(12.dp)).padding(12.dp)) { Column { InputGrid("逃げ距離(mm)", null, offDist) { offDist = it }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { applyOffset("user", 1) }, Modifier.weight(1f).height(48.dp)) { Text("User Z+", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }; Button(onClick = { applyOffset("tool", 1) }, Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("Tool Z+ 進", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) } } } }; Text("終点 P2", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp); CoordInputGrid(listOf(x2,y2,z2,w2,p2,r2)) { i,v -> when(i){0->x2=v;1->y2=v;2->z2=v;3->w2=v;4->p2=v;5->r2=v} }; Button(onClick = { calc() }, Modifier.fillMaxWidth().padding(top = 16.dp).height(60.dp)) { Text("計算実行", fontSize = 18.sp, fontWeight = FontWeight.Black) } } }
+        if (points.isNotEmpty()) { Box(Modifier.padding(top=16.dp).background(ColorCard, RoundedCornerShape(8.dp)).border(1.dp, ColorBorder, RoundedCornerShape(8.dp))) { LazyColumn(modifier = Modifier.heightIn(max = 400.dp).horizontalScroll(rememberScrollState())) { stickyHeader { Row(Modifier.background(ColorInputBg).padding(8.dp)) { listOf("No.","X","Y","Z","W","P","R").forEach { header -> Text(header, Modifier.width(80.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.Black, fontSize = 12.sp, color = ColorAccent) } } }; itemsIndexed(points) { index, row -> Row(modifier = Modifier.fillMaxWidth().background(if(selectedPointIdx == index) ColorPrimary.copy(alpha = 0.3f) else Color.Transparent).combinedClickable(onClick = { selectedPointIdx = index }, onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); points = emptyList(); selectedPointIdx = -1 }).padding(8.dp)) { row.forEach { cell -> Text(text = cell, modifier = Modifier.width(80.dp), textAlign = TextAlign.Center, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = ColorText) } } } } } }
         Spacer(Modifier.height(60.dp))
     }
 }
@@ -472,9 +487,30 @@ fun SectionTitle(title: String) { Text(text = title, color = ColorWarn, fontSize
 @Composable
 fun InputGrid(label: String, subLabel: String? = null, value: String, labelColor: Color = ColorLabel, imeAction: ImeAction = ImeAction.Next, onValueChange: (String) -> Unit) {
     val focusManager = LocalFocusManager.current
-    var isFocused by remember { mutableStateOf(false) }
-    val isError = value.isNotEmpty() && value.toDoubleOrNull() == null && value != "-" && value != "."
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) { Column(modifier = Modifier.weight(1.6f)) { Text(label, color = labelColor, fontSize = 12.sp, fontWeight = FontWeight.Black); if (subLabel != null) Text(subLabel, color = labelColor.copy(alpha = 0.8f), fontSize = 10.sp) }; OutlinedTextField(value = value, onValueChange = onValueChange, modifier = Modifier.weight(1f).height(52.dp).onFocusChanged { isFocused = it.isFocused }, isError = isError, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction), keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }, onDone = { focusManager.clearFocus() }), colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputFocus, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText, focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder), textStyle = TextStyle(textAlign = TextAlign.End, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ColorText), singleLine = true, shape = RoundedCornerShape(8.dp)) }
+    var textFieldValueState by remember { mutableStateOf(TextFieldValue(text = value)) }
+    LaunchedEffect(value) { if (textFieldValueState.text != value) { textFieldValueState = textFieldValueState.copy(text = value) } }
+
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) { 
+        Column(modifier = Modifier.weight(1.6f)) { Text(label, color = labelColor, fontSize = 12.sp, fontWeight = FontWeight.Black); if (subLabel != null) Text(subLabel, color = labelColor.copy(alpha = 0.8f), fontSize = 10.sp) }; 
+        OutlinedTextField(
+            value = textFieldValueState, 
+            onValueChange = { 
+                textFieldValueState = it
+                onValueChange(it.text)
+            }, 
+            modifier = Modifier.weight(1f).height(52.dp).onFocusChanged { 
+                if (it.isFocused) {
+                    textFieldValueState = textFieldValueState.copy(selection = TextRange(0, textFieldValueState.text.length))
+                }
+            }, 
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction), 
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }, onDone = { focusManager.clearFocus() }), 
+            colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputFocus, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText, focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder), 
+            textStyle = TextStyle(textAlign = TextAlign.End, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ColorText), 
+            singleLine = true, 
+            shape = RoundedCornerShape(8.dp)
+        ) 
+    }
 }
 
 @Composable
@@ -484,6 +520,30 @@ fun ResItem(label: String, value: String, unit: String, borderColor: Color = Col
 fun CoordInputGrid(values: List<String>, onUpdate: (Int, String) -> Unit) { val labels = listOf("X", "Y", "Z", "W", "P", "R"); Column { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { (0..2).forEach { i -> CoordSingleInput(labels[i], values[i], ImeAction.Next) { onUpdate(i, it) } } }; Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { (3..5).forEach { i -> CoordSingleInput(labels[i], values[i], if (i == 5) ImeAction.Done else ImeAction.Next) { onUpdate(i, it) } } } } }
 
 @Composable
-fun RowScope.CoordSingleInput(label: String, value: String, imeAction: ImeAction = ImeAction.Next, onValueChange: (String) -> Unit) { val focusManager = LocalFocusManager.current; OutlinedTextField(value = value, onValueChange = onValueChange, modifier = Modifier.weight(1f).height(48.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction), colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText), textStyle = TextStyle(fontSize = 12.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold), prefix = { Text(label, fontSize = 9.sp, color = ColorAccent) }, singleLine = true, shape = RoundedCornerShape(4.dp)) }
+fun RowScope.CoordSingleInput(label: String, value: String, imeAction: ImeAction = ImeAction.Next, onValueChange: (String) -> Unit) { 
+    val focusManager = LocalFocusManager.current
+    var textFieldValueState by remember { mutableStateOf(TextFieldValue(text = value)) }
+    LaunchedEffect(value) { if (textFieldValueState.text != value) { textFieldValueState = textFieldValueState.copy(text = value) } }
+
+    OutlinedTextField(
+        value = textFieldValueState, 
+        onValueChange = { 
+            textFieldValueState = it
+            onValueChange(it.text)
+        }, 
+        modifier = Modifier.weight(1f).height(48.dp).onFocusChanged {
+            if (it.isFocused) {
+                textFieldValueState = textFieldValueState.copy(selection = TextRange(0, textFieldValueState.text.length))
+            }
+        }, 
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction), 
+        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }, onDone = { focusManager.clearFocus() }),
+        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText), 
+        textStyle = TextStyle(fontSize = 12.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold), 
+        prefix = { Text(label, fontSize = 9.sp, color = ColorAccent) }, 
+        singleLine = true, 
+        shape = RoundedCornerShape(4.dp)
+    ) 
+}
 
 object RobotMath { fun getToolZOffsetVector(wDeg: Double, pDeg: Double, rDeg: Double, dist: Double): Triple<Double, Double, Double> { val w = Math.toRadians(wDeg); val p = Math.toRadians(pDeg); val r = Math.toRadians(rDeg); val dx = dist * (cos(r) * sin(p) * cos(w) + sin(r) * sin(w)); val dy = dist * (sin(r) * sin(p) * cos(w) - cos(r) * sin(w)); val dz = dist * (cos(p) * cos(w)); return Triple(dx, dy, dz) } }
