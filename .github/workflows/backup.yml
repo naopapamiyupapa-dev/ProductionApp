@@ -32,35 +32,33 @@ jobs:
       env:
         GAS_URL: ${{ secrets.GAS_WEBHOOK_URL }}
       run: |
-        base64 -w 0 "${ZIP_PATH}" > base64_data.txt
+        BASE64_DATA=$(base64 -w 0 "${ZIP_PATH}")
         
-        cat > payload.json << EOF
+        cat > payload.json << 'EOFMARKER'
         {
-          "file": "$(cat base64_data.txt)",
-          "filename": "${ZIP_NAME}"
+          "file": "BASE64_PLACEHOLDER",
+          "filename": "FILENAME_PLACEHOLDER"
         }
-        EOF
+        EOFMARKER
         
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${GAS_URL}" \
+        sed -i "s|BASE64_PLACEHOLDER|${BASE64_DATA}|g" payload.json
+        sed -i "s|FILENAME_PLACEHOLDER|${ZIP_NAME}|g" payload.json
+        
+        HTTP_CODE=$(curl -s -o response.txt -w "%{http_code}" -X POST "${GAS_URL}" \
           -H "Content-Type: application/json" \
           --data-binary @payload.json)
         
-        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-        BODY=$(echo "$RESPONSE" | head -n-1)
-        
         echo "HTTP Status: ${HTTP_CODE}"
-        echo "Response: ${BODY}"
-        
-        rm -f base64_data.txt payload.json
+        cat response.txt
         
         if [ "${HTTP_CODE}" != "200" ]; then
-          echo "❌ Upload failed with status ${HTTP_CODE}"
+          echo "❌ Upload failed"
           exit 1
         fi
         
-        if echo "${BODY}" | grep -q '"success":true'; then
+        if grep -q '"success":true' response.txt; then
           echo "✅ Upload successful!"
         else
-          echo "❌ Upload failed!"
+          echo "❌ Upload failed"
           exit 1
         fi
