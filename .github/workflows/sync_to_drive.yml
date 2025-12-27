@@ -15,8 +15,26 @@ jobs:
         run: zip -r production_app.zip . -x ".git*"
 
       - name: Upload to Google Drive via GAS
+        env:
+          WEBAPP_URL: ${{ secrets.WEBAPP_URL }}
         run: |
-          curl -L -X POST "${{ secrets.WEBAPP_URL }}" \
-            --data-urlencode "filename=production_app.zip" \
-            --data-urlencode "mimetype=application/zip" \
-            --data-urlencode "data=$(base64 -w 0 production_app.zip)"
+          python3 - <<EOF
+          import base64, urllib.parse, urllib.request, os
+          
+          # ZIPファイルを読み込んでBase64にするわ
+          with open("production_app.zip", "rb") as f:
+              encoded_string = base64.b64encode(f.read()).decode("utf-8")
+          
+          # 送信データを作成
+          params = {
+              "filename": "production_app.zip",
+              "mimetype": "application/zip",
+              "data": encoded_string
+          }
+          data = urllib.parse.urlencode(params).encode("utf-8")
+          
+          # GASに送信
+          req = urllib.request.Request(os.environ["WEBAPP_URL"], data=data)
+          with urllib.request.urlopen(req) as response:
+              print(response.read().decode("utf-8"))
+          EOF
