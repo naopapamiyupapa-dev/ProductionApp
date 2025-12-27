@@ -32,17 +32,26 @@ jobs:
       env:
         GAS_URL: ${{ secrets.GAS_WEBHOOK_URL }}
       run: |
-        BASE64_DATA=$(base64 -w 0 "${ZIP_PATH}")
+        base64 -w 0 "${ZIP_PATH}" > base64_data.txt
+        
+        cat > payload.json << EOF
+        {
+          "file": "$(cat base64_data.txt)",
+          "filename": "${ZIP_NAME}"
+        }
+        EOF
         
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${GAS_URL}" \
           -H "Content-Type: application/json" \
-          -d "{\"file\":\"${BASE64_DATA}\",\"filename\":\"${ZIP_NAME}\"}")
+          --data-binary @payload.json)
         
         HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | head -n-1)
         
         echo "HTTP Status: ${HTTP_CODE}"
         echo "Response: ${BODY}"
+        
+        rm -f base64_data.txt payload.json
         
         if [ "${HTTP_CODE}" != "200" ]; then
           echo "❌ Upload failed with status ${HTTP_CODE}"
@@ -51,9 +60,7 @@ jobs:
         
         if echo "${BODY}" | grep -q '"success":true'; then
           echo "✅ Upload successful!"
-          echo "${BODY}" | grep -o '"url":"[^"]*"'
         else
           echo "❌ Upload failed!"
-          echo "${BODY}"
           exit 1
         fi
