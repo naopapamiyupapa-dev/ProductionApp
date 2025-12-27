@@ -3,7 +3,7 @@ name: Sync to Google Drive
 on:
   push:
     branches:
-      - main  # メインブランチに更新があったら実行
+      - main
 
 jobs:
   upload:
@@ -13,13 +13,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Zip Project
-        # プロジェクト全体を圧縮！AI Studioが読み込みやすい形にするよ✨
         run: zip -r production_app.zip . -x "*.git*"
 
       - name: Upload to Google Drive
-        uses: Jokanemono/google-drive-upload-git-action@v0.1.1
+        # こっちの有名なアクションに変更するよ！✨
+        uses: adityak74/google-drive-upload-git-action@main
         with:
-          service_account_json: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
-          folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
-          file_path: production_app.zip
-          overwrite: true
+          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          filename: production_app.zip
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          overwrite: "true"
