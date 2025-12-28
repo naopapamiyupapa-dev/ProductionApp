@@ -1,4 +1,4 @@
-// Version 1.0.2
+// Version 1.1.0 (Integrated Launcher Edition)
 package com.example.genba
 
 import android.os.Bundle
@@ -11,6 +11,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -19,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable // データの保護に必要
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -27,7 +30,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext // Context取得に必要
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -40,25 +43,17 @@ import androidx.compose.ui.unit.sp
 import java.util.*
 import kotlin.math.*
 
-// --- カラー定義 ---
-val ColorPrimary = Color(0xFF007AFF)
-val ColorBg = Color(0xFF000000)
-val ColorCard = Color(0xFF1C1C1E)
-val ColorText = Color(0xFFFFFFFF)
-val ColorAccent = Color(0xFF32D74B)
-val ColorWarn = Color(0xFFFF9F0A)
-val ColorDanger = Color(0xFFFF453A)
+// --- [1] カラー定義 ---
+val ColorPrimary = Color(0xFF007AFF) // ブルー
+val ColorBg = Color(0xFF000000)      // ブラック
+val ColorCard = Color(0xFF1C1C1E)    // ダークグレー
+val ColorText = Color(0xFFFFFFFF)    // ホワイト
+val ColorAccent = Color(0xFF32D74B)  // グリーン
+val ColorWarn = Color(0xFFFF9F0A)    // オレンジ
+val ColorDanger = Color(0xFFFF453A)  // レッド
 val ColorLabel = Color(0xFFF2F2F7)
 val ColorBorder = Color(0xFF48484A)
 val ColorInputBg = Color(0xFF2C2C2E)
-
-// --- ユーティリティ：コピー機能 ---
-fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("GenbaTool", text)
-    clipboard.setPrimaryClip(clip)
-    Toast.makeText(context, "コピーしました: $text", Toast.LENGTH_SHORT).show()
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,164 +81,144 @@ fun GenbaToolTheme(content: @Composable () -> Unit) {
     )
 }
 
-// --- ロジック用データ型 ---
-data class RobotPoint(
-    val x: Double, val y: Double, val z: Double,
-    val w: Double, val p: Double, val r: Double
-)
+// ユーティリティ：コピー機能
+fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("GenbaTool", text)
+    clipboard.setPrimaryClip(clip)
+    Toast.makeText(context, "コピーしました✨", Toast.LENGTH_SHORT).show()
+}
 
-data class MasterCoord(
-    var name: String = "",
-    var x: String = "0", var y: String = "0", var z: String = "0",
-    var w: String = "0", var p: String = "0", var r: String = "0"
-)
+// --- [2] データ定義 ---
+data class RobotPoint(val x: Double, val y: Double, val z: Double, val w: Double, val p: Double, val r: Double)
+data class MasterCoord(var name: String = "", var x: String = "0", var y: String = "0", var z: String = "0", var w: String = "0", var p: String = "0", var r: String = "0")
+fun MasterCoord.toRobotPoint() = RobotPoint(x.toDoubleOrNull() ?: 0.0, y.toDoubleOrNull() ?: 0.0, z.toDoubleOrNull() ?: 0.0, w.toDoubleOrNull() ?: 0.0, p.toDoubleOrNull() ?: 0.0, r.toDoubleOrNull() ?: 0.0)
+data class ActionData(val id: String = UUID.randomUUID().toString(), var name: String = "", var delay: String = "0", var duration: String = "1.0")
 
-fun MasterCoord.toRobotPoint() = RobotPoint(
-    x = x.toDoubleOrNull() ?: 0.0,
-    y = y.toDoubleOrNull() ?: 0.0,
-    z = z.toDoubleOrNull() ?: 0.0,
-    w = w.toDoubleOrNull() ?: 0.0,
-    p = p.toDoubleOrNull() ?: 0.0,
-    r = r.toDoubleOrNull() ?: 0.0
-)
-
-data class ActionData(
-    val id: String = UUID.randomUUID().toString(),
-    var name: String = "",
-    var delay: String = "0",
-    var duration: String = "1.0"
-)
-
+// --- [3] メイン構造（司令塔） ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
-    // rememberSaveable を使用して、画面回転時にタブが戻らないようにします
-    var currentTab by rememberSaveable { mutableStateOf("prod") }
-
-    // マスタデータは複雑な型のため remember で保持（永続化は今後の課題）
+    // 起動時は "dashboard"
+    var currentTab by rememberSaveable { mutableStateOf("dashboard") }
+    // 座標マスタはページ間で共有するため MainScreen で保持
     var masterUF by remember { mutableStateOf(List(10) { MasterCoord("UF$it") }) }
     var masterTF by remember { mutableStateOf(List(10) { MasterCoord("TF$it") }) }
 
     Scaffold(
-        bottomBar = {
-            NavigationBar(containerColor = ColorCard, tonalElevation = 8.dp) {
-                TabItem("生産性", Icons.Default.Assessment, "prod", currentTab) { currentTab = it }
-                TabItem("計画", Icons.Default.DateRange, "plan", currentTab) { currentTab = it }
-                TabItem("時間", Icons.Default.Timer, "time", currentTab) { currentTab = it }
-                TabItem("チャート", Icons.Default.Timeline, "chart", currentTab) { currentTab = it }
-                TabItem("座標", Icons.Default.Place, "coord", currentTab) { currentTab = it }
-                TabItem("マスタ", Icons.Default.List, "master", currentTab) { currentTab = it }
+        topBar = {
+            // ダッシュボード以外では上部にAppBarを表示
+            if (currentTab != "dashboard") {
+                CenterAlignedTopAppBar(
+                    title = { Text(getPageTitle(currentTab), fontWeight = FontWeight.Black, fontSize = 18.sp) },
+                    navigationIcon = {
+                        IconButton(onClick = { currentTab = "dashboard" }) {
+                            Icon(Icons.Default.Home, contentDescription = "Home", tint = ColorText)
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = ColorCard,
+                        titleContentColor = ColorText
+                    )
+                )
             }
         },
         containerColor = ColorBg
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues)) {
             when (currentTab) {
+                "dashboard" -> DashboardPage { currentTab = it }
                 "prod" -> ProductivityPage()
                 "plan" -> PlanPage()
                 "time" -> TimeConverterPage()
                 "chart" -> TimeChartPage()
-                "coord" -> CoordPage(masterUF, masterTF)
-                "master" -> MasterPage(masterUF, masterTF, { masterUF = it }, { masterTF = it })
+                "coord" -> CoordIntegratedPage(masterUF, masterTF, { masterUF = it }, { masterTF = it })
+            }
+        }
+    }
+}
+
+fun getPageTitle(id: String) = when(id) {
+    "prod" -> "生産性・効率"
+    "plan" -> "出来高計画"
+    "time" -> "時間変換"
+    "chart" -> "タイムチャート"
+    "coord" -> "座標総合管理"
+    else -> "現場ツール"
+}
+
+// --- [4] ダッシュボード（新規追加：タイルUI） ---
+@Composable
+fun DashboardPage(onSelect: (String) -> Unit) {
+    val items = listOf(
+        // Triple(ラベル, アイコン, ページID, カラー)
+        Triple("生産性・OEE", Icons.Default.Assessment, "prod" to ColorAccent),
+        Triple("出来高計画", Icons.Default.DateRange, "plan" to ColorPrimary),
+        Triple("チャート表示", Icons.Default.Timeline, "chart" to ColorPrimary),
+        Triple("時間変換", Icons.Default.Timer, "time" to ColorWarn),
+        Triple("座標総合\n(分割/マスタ)", Icons.Default.Place, "coord" to ColorDanger)
+    )
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text(
+            text = "現場ダッシュボード",
+            color = ColorText,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(bottom = 24.dp, top = 8.dp)
+        )
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(items) { item ->
+                DashboardTile(
+                    label = item.first,
+                    icon = item.second,
+                    config = item.third,
+                    onClick = { onSelect(item.third.first) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun RowScope.TabItem(label: String, icon: ImageVector, id: String, current: String, onClick: (String) -> Unit) {
-    NavigationBarItem(
-        selected = current == id,
-        onClick = { onClick(id) },
-        icon = { Icon(icon, contentDescription = label) },
-        label = { Text(label, fontSize = 9.sp, fontWeight = if(current==id) FontWeight.ExtraBold else FontWeight.Normal) },
-        colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = ColorPrimary,
-            selectedTextColor = ColorPrimary,
-            unselectedIconColor = Color(0xFF8E8E93),
-            unselectedTextColor = Color(0xFF8E8E93),
-            indicatorColor = Color.Transparent
-        )
-    )
-}
-
-@Composable
-fun PageTitle(title: String) {
-    Text(
-        text = title, color = ColorAccent, fontSize = 20.sp, fontWeight = FontWeight.Black,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), textAlign = TextAlign.Center
-    )
-}
-
-@Composable
-fun SectionTitle(title: String) {
-    Text(
-        text = title, color = ColorWarn, fontSize = 14.sp, fontWeight = FontWeight.Black,
-        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp).drawBehind {
-            drawLine(ColorWarn, Offset(0f, size.height), Offset(size.width, size.height), 2.dp.toPx())
-        }
-    )
-}
-
-@Composable
-fun InputGrid(label: String, subLabel: String? = null, value: String, labelColor: Color = ColorLabel, onValueChange: (String) -> Unit) {
-    var textFieldValue by remember(value) { mutableStateOf(TextFieldValue(value)) }
-
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1.6f)) {
-            Text(label, color = labelColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            if (subLabel != null) Text(subLabel, color = labelColor.copy(alpha = 0.8f), fontSize = 10.sp)
-        }
-        OutlinedTextField(
-            value = textFieldValue,
-            onValueChange = {
-                textFieldValue = it
-                onValueChange(it.text)
-            },
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp)
-                .onFocusChanged { if (it.isFocused) textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg,
-                focusedTextColor = ColorText, unfocusedTextColor = ColorText,
-                focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder
-            ),
-            textStyle = TextStyle(textAlign = TextAlign.End, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ColorText),
-            singleLine = true
-        )
-    }
-}
-
-@Composable
-fun ResItem(label: String, value: String, unit: String, borderColor: Color = ColorPrimary) {
-    val context = LocalContext.current
-    Row(
+fun DashboardTile(label: String, icon: ImageVector, config: Pair<String, Color>, onClick: () -> Unit) {
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(ColorInputBg, RoundedCornerShape(8.dp))
-            .clickable { copyToClipboard(context, value) } // タップでコピー
-            .drawBehind {
-                drawLine(borderColor, Offset(0f, 0f), Offset(0f, size.height), 5.dp.toPx())
-            }.padding(12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+            .height(135.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = ColorCard),
+        border = BorderStroke(2.dp, config.second.copy(alpha = 0.5f))
     ) {
-        Column {
-            Text(label, color = ColorLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(value, color = ColorText, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-                Text(unit, color = ColorLabel, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
-            }
+        Column(
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, null, tint = config.second, modifier = Modifier.size(36.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = label,
+                color = ColorText,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp
+            )
         }
-        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = ColorLabel.copy(alpha = 0.3f), modifier = Modifier.size(16.dp))
     }
 }
 
-// --- 1. 生産性ページ ---
+// --- [5] 各ページの中身（全ロジック完全維持） ---
+
 @Composable
 fun ProductivityPage() {
-    // rememberSaveable に変更：画面回転しても数値が消えない
     var t1 by rememberSaveable { mutableStateOf("30") }; var t2 by rememberSaveable { mutableStateOf("85") }; var t3 by rememberSaveable { mutableStateOf("8") }
     var o1 by rememberSaveable { mutableStateOf("480") }; var o2 by rememberSaveable { mutableStateOf("420") }; var o3 by rememberSaveable { mutableStateOf("30") }
     var o4 by rememberSaveable { mutableStateOf("700") }; var o5 by rememberSaveable { mutableStateOf("680") }
@@ -263,7 +238,6 @@ fun ProductivityPage() {
     val realH = if (lO3 > 0) (3600.0 / lO3) * (oee / 100.0) else 0.0
 
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("生産性・効率 (Productivity/OEE)")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { t1=""; t2=""; t3="" }) { Text("仕事量クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) }
         }
@@ -318,7 +292,6 @@ fun PlanPage() {
     val resPH = if (maxD > 0) (hours * 3600.0 * rate) / maxD else 0.0
 
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("出来高計画 (Production Plan)")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { p1=""; p2=""; p3=""; p4="" }) { Text("入力クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) }
         }
@@ -354,7 +327,6 @@ fun TimeConverterPage() {
         Triple("マイクロ秒 (μs)", 0.000001, ColorAccent)
     )
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("時間変換 (Time Converter Ultra)")
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
             Column(modifier = Modifier.padding(12.dp)) {
                 units.forEach { (label, factor, color) ->
@@ -379,7 +351,6 @@ fun TimeChartPage() {
     val totalCycle = actions.map { (it.delay.toDoubleOrNull() ?: 0.0) + (it.duration.toDoubleOrNull() ?: 0.0) }.maxOrNull() ?: 0.0
 
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("タイムチャート (Time Chart)")
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -401,7 +372,7 @@ fun TimeChartPage() {
                         IconButton(onClick = { actions = actions.toMutableList().filterIndexed { i, _ -> i != idx } }, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Close, null, tint = ColorDanger) }
                     }
                 }
-                Button(onClick = { actions = actions + ActionData(name = "動作${actions.size+1}") }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)) { Text("＋ 動作追加", fontWeight = FontWeight.Black, color = ColorBg) }
+                Button(onClick = { actions = actions + ActionData(name = "動作${actions.size+1}") }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorPrimary)) { Text("＋ 動作追加", fontWeight = FontWeight.Black, color = ColorText) }
                 ResItem("合計サイクル", String.format("%.2f", totalCycle), "秒", ColorWarn)
                 SectionTitle("視覚化グラフ")
                 actions.forEach { act ->
@@ -428,8 +399,41 @@ fun TimeChartPage() {
     }
 }
 
+// --- [6] 座標総合（分割＆マスタ統合：全ロジック維持） ---
 @Composable
-fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
+fun CoordIntegratedPage(
+    masterUF: List<MasterCoord>, masterTF: List<MasterCoord>,
+    onUpdateUF: (List<MasterCoord>) -> Unit, onUpdateTF: (List<MasterCoord>) -> Unit
+) {
+    var subTab by rememberSaveable { mutableStateOf("split") }
+
+    Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        // サブタブ（分割かマスタか）
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { subTab = "split" },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = if(subTab=="split") ColorDanger else ColorCard)
+            ) { Text("座標分割・逃げ", fontWeight = FontWeight.Bold) }
+            Button(
+                onClick = { subTab = "master" },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = if(subTab=="master") ColorDanger else ColorCard)
+            ) { Text("マスタ管理", fontWeight = FontWeight.Bold) }
+        }
+
+        Divider(color = ColorBorder, thickness = 1.dp)
+
+        if (subTab == "split") {
+            CoordSplitSubPage(masterUF, masterTF)
+        } else {
+            MasterSubPage(masterUF, masterTF, onUpdateUF, onUpdateTF)
+        }
+    }
+}
+
+@Composable
+fun CoordSplitSubPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
     var x1 by rememberSaveable { mutableStateOf("500") }; var y1 by rememberSaveable { mutableStateOf("0") }; var z1 by rememberSaveable { mutableStateOf("500") }
     var w1 by rememberSaveable { mutableStateOf("0") }; var p1 by rememberSaveable { mutableStateOf("-90") }; var r1 by rememberSaveable { mutableStateOf("0") }
     var x2 by rememberSaveable { mutableStateOf("") }; var y2 by rememberSaveable { mutableStateOf("") }; var z2 by rememberSaveable { mutableStateOf("") }
@@ -442,12 +446,10 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
     var selectedTFIdx by rememberSaveable { mutableStateOf(0) }
     var showUFMenu by remember { mutableStateOf(false) }
     var showTFMenu by remember { mutableStateOf(false) }
-
     var selectedCalcUfSlot by rememberSaveable { mutableStateOf(0) }
     var selectedCalcTfSlot by rememberSaveable { mutableStateOf(0) }
     var showCalcUfMenu by remember { mutableStateOf(false) }
     var showCalcTfMenu by remember { mutableStateOf(false) }
-
     var highlightedRows by remember { mutableStateOf(setOf<Int>()) }
 
     fun calc() {
@@ -463,9 +465,7 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
         val d = (offDist.toDoubleOrNull() ?: 0.0) * sign
         val p1_x = x1.toDoubleOrNull() ?: 0.0; val p1_y = y1.toDoubleOrNull() ?: 0.0; val p1_z = z1.toDoubleOrNull() ?: 0.0
         val p1_w = w1.toDoubleOrNull() ?: 0.0; val p1_p = p1.toDoubleOrNull() ?: 0.0; val p1_r = r1.toDoubleOrNull() ?: 0.0
-
         val master = if (mode == "user") masterUF[selectedCalcUfSlot].toRobotPoint() else masterTF[selectedCalcTfSlot].toRobotPoint()
-
         if (mode == "user") {
             x2 = (p1_x + master.x).toString(); y2 = (p1_y + master.y).toString(); z2 = (p1_z + master.z + d).toString()
         } else {
@@ -475,9 +475,8 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
         w2 = w1; p2 = p1; r2 = r1; calc()
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("座標分割・逃げ (Split/Offset)")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { x1=""; y1=""; z1=""; w1=""; p1=""; r1=""; x2=""; y2=""; z2=""; w2=""; p2=""; r2="" }) { Text("座標クリア ✕", color = ColorDanger, fontWeight = FontWeight.Bold) }
         }
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
@@ -565,76 +564,15 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
                 }
             }
         }
-        Spacer(Modifier.height(60.dp))
+        Spacer(Modifier.height(80.dp))
     }
 }
 
 @Composable
-fun RowScope.CoordSingleInput(label: String, value: String, onValueChange: (String) -> Unit) {
-    // 1. 内部状態としてのテキストを保持（TextFieldValueを直接 remember(value) しないのがコツ！）
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(value)) }
-
-    // 2. 外部（スロット読込など）で数値が変わった時だけ、内部の数値を書き換える
-    LaunchedEffect(value) {
-        if (value != textFieldValue.text) {
-            textFieldValue = textFieldValue.copy(
-                text = value,
-                selection = TextRange(value.length) // カーソルを一番後ろに
-            )
-        }
-    }
-
-    Column(Modifier.weight(1f)) {
-        Text(label, fontSize = 10.sp, color = ColorLabel, fontWeight = FontWeight.Black)
-        OutlinedTextField(
-            value = textFieldValue,
-            onValueChange = {
-                // 文字が入力された時
-                textFieldValue = it
-                // 親のデータ（x1など）にも伝える
-                if (value != it.text) {
-                    onValueChange(it.text)
-                }
-            },
-            modifier = Modifier
-                .height(50.dp)
-                .onFocusChanged {
-                    // フォーカスが当たった時に全選択（現場で数値を上書きしやすくするため）
-                    if (it.isFocused) {
-                        textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length))
-                    }
-                },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg,
-                focusedTextColor = ColorText, unfocusedTextColor = ColorText,
-                focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder
-            ),
-            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, color = ColorText),
-            singleLine = true
-        )
-    }
-}
-
-@Composable
-fun CoordInputGrid(values: List<String>, onUpdate: (Int, String) -> Unit) {
-    val labels = listOf("X", "Y", "Z", "W", "P", "R")
-    Column {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (0..2).forEach { i ->
-                CoordSingleInput(labels[i], values[i]) { onUpdate(i, it) }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (3..5).forEach { i ->
-                CoordSingleInput(labels[i], values[i]) { onUpdate(i, it) }
-            }
-        }
-    }
-}
-
-@Composable
-fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdateUF: (List<MasterCoord>) -> Unit, onUpdateTF: (List<MasterCoord>) -> Unit) {
+fun MasterSubPage(
+    masterUF: List<MasterCoord>, masterTF: List<MasterCoord>,
+    onUpdateUF: (List<MasterCoord>) -> Unit, onUpdateTF: (List<MasterCoord>) -> Unit
+) {
     val context = LocalContext.current
     var selectedSlot by rememberSaveable { mutableStateOf(0) }; var mName by rememberSaveable { mutableStateOf("") }
     var mx by rememberSaveable { mutableStateOf("0") }; var my by rememberSaveable { mutableStateOf("0") }; var mz by rememberSaveable { mutableStateOf("0") }
@@ -642,30 +580,30 @@ fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdat
 
     fun fill(slot: Int) { val d = masterUF[slot]; mName = d.name; mx=d.x; my=d.y; mz=d.z; mw=d.w; mp=d.p; mr=d.r }
 
-    Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
-        PageTitle("座標マスタ (0-9 Slots)")
+    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        SectionTitle("スロット選択・編集")
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Slot番号", Modifier.weight(1f), fontSize = 13.sp, color = ColorLabel, fontWeight = FontWeight.ExtraBold)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     (0..9).forEach { i ->
-                        Box(Modifier.size(34.dp).padding(2.dp).background(if(selectedSlot==i) ColorPrimary else ColorInputBg, RoundedCornerShape(6.dp)).clickable { selectedSlot=i; fill(i) }, contentAlignment = Alignment.Center) {
-                            Text(i.toString(), fontSize = 14.sp, fontWeight = FontWeight.Black, color = ColorText)
+                        Box(Modifier.size(45.dp).padding(2.dp).background(if(selectedSlot==i) ColorDanger else ColorInputBg, RoundedCornerShape(6.dp)).clickable { selectedSlot=i; fill(i) }, contentAlignment = Alignment.Center) {
+                            Text(i.toString(), fontSize = 16.sp, fontWeight = FontWeight.Black, color = ColorText)
                         }
+                        Spacer(Modifier.width(4.dp))
                     }
                 }
-                TextField(value = mName, onValueChange = { mName = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), label = { Text("地点名称をここに入力", color = ColorLabel, fontWeight = FontWeight.Bold) }, colors = TextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText))
+                TextField(value = mName, onValueChange = { mName = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), label = { Text("地点名称を入力", color = ColorLabel, fontWeight = FontWeight.Bold) }, colors = TextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText))
                 CoordInputGrid(listOf(mx,my,mz,mw,mp,mr)) { i,v -> when(i){0->mx=v;1->my=v;2->mz=v;3->mw=v;4->mp=v;5->mr=v} }
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = {
                         onUpdateUF(masterUF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) })
-                        Toast.makeText(context, "Slot $selectedSlot をUFに保存しました", Toast.LENGTH_SHORT).show()
-                    }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)) { Text("UFに保存", fontWeight = FontWeight.Black, color = ColorBg) }
+                        Toast.makeText(context, "Slot $selectedSlot をUFに保存", Toast.LENGTH_SHORT).show()
+                    }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)) { Text("UF保存", fontWeight = FontWeight.Black, color = ColorBg) }
 
                     Button(onClick = {
                         onUpdateTF(masterTF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) })
-                        Toast.makeText(context, "Slot $selectedSlot をTFに保存しました", Toast.LENGTH_SHORT).show()
-                    }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("TFに保存", fontWeight = FontWeight.Black, color = ColorText) }
+                        Toast.makeText(context, "Slot $selectedSlot をTFに保存", Toast.LENGTH_SHORT).show()
+                    }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("TF保存", fontWeight = FontWeight.Black, color = ColorText) }
                 }
             }
         }
@@ -676,8 +614,96 @@ fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdat
                 Text("UF [${d.name}] / TF [${masterTF[i].name}]", fontSize = 11.sp, color = ColorText, fontWeight = FontWeight.ExtraBold)
             }
         }
-        Spacer(Modifier.height(24.dp))
-        Text(text = "Version 1.0.2", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ColorLabel, fontSize = 14.sp, fontWeight = FontWeight.Black)
-        Spacer(Modifier.height(60.dp))
+        Spacer(Modifier.height(80.dp))
+    }
+}
+
+// --- [7] 共通UI部品：セクションタイトル、入力グリッド、結果アイテム ---
+
+@Composable
+fun SectionTitle(title: String) {
+    Text(
+        text = title, color = ColorWarn, fontSize = 14.sp, fontWeight = FontWeight.Black,
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp).drawBehind {
+            drawLine(ColorWarn, Offset(0f, size.height), Offset(size.width, size.height), 2.dp.toPx())
+        }
+    )
+}
+
+@Composable
+fun InputGrid(label: String, subLabel: String? = null, value: String, labelColor: Color = ColorLabel, onValueChange: (String) -> Unit) {
+    var textFieldValue by remember(value) { mutableStateOf(TextFieldValue(value)) }
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1.6f)) {
+            Text(label, color = labelColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            if (subLabel != null) Text(subLabel, color = labelColor.copy(alpha = 0.8f), fontSize = 10.sp)
+        }
+        OutlinedTextField(
+            value = textFieldValue,
+            onValueChange = { textFieldValue = it; onValueChange(it.text) },
+            modifier = Modifier.weight(1f).height(52.dp).onFocusChanged { if (it.isFocused) textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText, focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder),
+            textStyle = TextStyle(textAlign = TextAlign.End, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ColorText),
+            singleLine = true
+        )
+    }
+}
+
+@Composable
+fun ResItem(label: String, value: String, unit: String, borderColor: Color = ColorPrimary) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).background(ColorInputBg, RoundedCornerShape(8.dp))
+            .clickable { copyToClipboard(context, value) }
+            .drawBehind { drawLine(borderColor, Offset(0f, 0f), Offset(0f, size.height), 5.dp.toPx()) }
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(label, color = ColorLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, color = ColorText, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                Text(unit, color = ColorLabel, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
+            }
+        }
+        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = ColorLabel.copy(alpha = 0.3f), modifier = Modifier.size(16.dp))
+    }
+}
+
+@Composable
+fun CoordInputGrid(values: List<String>, onUpdate: (Int, String) -> Unit) {
+    val labels = listOf("X", "Y", "Z", "W", "P", "R")
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (0..2).forEach { i -> CoordSingleInput(labels[i], values[i]) { onUpdate(i, it) } }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (3..5).forEach { i -> CoordSingleInput(labels[i], values[i]) { onUpdate(i, it) } }
+        }
+    }
+}
+
+@Composable
+fun RowScope.CoordSingleInput(label: String, value: String, onValueChange: (String) -> Unit) {
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(value)) }
+    LaunchedEffect(value) {
+        if (value != textFieldValue.text) {
+            textFieldValue = textFieldValue.copy(text = value, selection = TextRange(value.length))
+        }
+    }
+    Column(Modifier.weight(1f)) {
+        Text(label, fontSize = 10.sp, color = ColorLabel, fontWeight = FontWeight.Black)
+        OutlinedTextField(
+            value = textFieldValue,
+            onValueChange = { textFieldValue = it; onValueChange(it.text) },
+            modifier = Modifier.height(50.dp).onFocusChanged {
+                if (it.isFocused) textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length))
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText, focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder),
+            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, color = ColorText),
+            singleLine = true
+        )
     }
 }
