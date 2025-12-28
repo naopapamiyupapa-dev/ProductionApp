@@ -1,7 +1,11 @@
-// Version 1.0.0
+// Version 1.0.2
 package com.example.genba
 
 import android.os.Bundle
+import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -15,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable // データの保護に必要
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -22,6 +27,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext // Context取得に必要
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -35,16 +41,24 @@ import java.util.*
 import kotlin.math.*
 
 // --- カラー定義 ---
-val ColorPrimary = Color(0xFF007AFF) // 青
-val ColorBg = Color(0xFF000000)      // 黒
-val ColorCard = Color(0xFF1C1C1E)    // グレー
-val ColorText = Color(0xFFFFFFFF)    // 白
-val ColorAccent = Color(0xFF32D74B)  // ライムグリーン
-val ColorWarn = Color(0xFFFF9F0A)    // オレンジ
-val ColorDanger = Color(0xFFFF453A)  // 赤
-val ColorLabel = Color(0xFFF2F2F7)   // 高輝度グレー
-val ColorBorder = Color(0xFF48484A)  // 枠線
-val ColorInputBg = Color(0xFF2C2C2E) // 入力背景
+val ColorPrimary = Color(0xFF007AFF)
+val ColorBg = Color(0xFF000000)
+val ColorCard = Color(0xFF1C1C1E)
+val ColorText = Color(0xFFFFFFFF)
+val ColorAccent = Color(0xFF32D74B)
+val ColorWarn = Color(0xFFFF9F0A)
+val ColorDanger = Color(0xFFFF453A)
+val ColorLabel = Color(0xFFF2F2F7)
+val ColorBorder = Color(0xFF48484A)
+val ColorInputBg = Color(0xFF2C2C2E)
+
+// --- ユーティリティ：コピー機能 ---
+fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("GenbaTool", text)
+    clipboard.setPrimaryClip(clip)
+    Toast.makeText(context, "コピーしました: $text", Toast.LENGTH_SHORT).show()
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,7 +116,10 @@ data class ActionData(
 
 @Composable
 fun MainScreen() {
-    var currentTab by remember { mutableStateOf("prod") }
+    // rememberSaveable を使用して、画面回転時にタブが戻らないようにします
+    var currentTab by rememberSaveable { mutableStateOf("prod") }
+
+    // マスタデータは複雑な型のため remember で保持（永続化は今後の課題）
     var masterUF by remember { mutableStateOf(List(10) { MasterCoord("UF$it") }) }
     var masterTF by remember { mutableStateOf(List(10) { MasterCoord("TF$it") }) }
 
@@ -178,7 +195,7 @@ fun InputGrid(label: String, subLabel: String? = null, value: String, labelColor
         }
         OutlinedTextField(
             value = textFieldValue,
-            onValueChange = { 
+            onValueChange = {
                 textFieldValue = it
                 onValueChange(it.text)
             },
@@ -200,34 +217,43 @@ fun InputGrid(label: String, subLabel: String? = null, value: String, labelColor
 
 @Composable
 fun ResItem(label: String, value: String, unit: String, borderColor: Color = ColorPrimary) {
+    val context = LocalContext.current
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).background(ColorInputBg, RoundedCornerShape(8.dp))
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .background(ColorInputBg, RoundedCornerShape(8.dp))
+            .clickable { copyToClipboard(context, value) } // タップでコピー
             .drawBehind {
                 drawLine(borderColor, Offset(0f, 0f), Offset(0f, size.height), 5.dp.toPx())
             }.padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = ColorLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, color = ColorText, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-            Text(unit, color = ColorLabel, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
+        Column {
+            Text(label, color = ColorLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, color = ColorText, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                Text(unit, color = ColorLabel, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
+            }
         }
+        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = ColorLabel.copy(alpha = 0.3f), modifier = Modifier.size(16.dp))
     }
 }
 
 // --- 1. 生産性ページ ---
 @Composable
 fun ProductivityPage() {
-    var t1 by remember { mutableStateOf("30") }; var t2 by remember { mutableStateOf("85") }; var t3 by remember { mutableStateOf("8") }
-    var o1 by remember { mutableStateOf("480") }; var o2 by remember { mutableStateOf("420") }; var o3 by remember { mutableStateOf("30") }
-    var o4 by remember { mutableStateOf("700") }; var o5 by remember { mutableStateOf("680") }
-    var workerNum by remember { mutableStateOf("1") }
+    // rememberSaveable に変更：画面回転しても数値が消えない
+    var t1 by rememberSaveable { mutableStateOf("30") }; var t2 by rememberSaveable { mutableStateOf("85") }; var t3 by rememberSaveable { mutableStateOf("8") }
+    var o1 by rememberSaveable { mutableStateOf("480") }; var o2 by rememberSaveable { mutableStateOf("420") }; var o3 by rememberSaveable { mutableStateOf("30") }
+    var o4 by rememberSaveable { mutableStateOf("700") }; var o5 by rememberSaveable { mutableStateOf("680") }
+    var workerNum by rememberSaveable { mutableStateOf("1") }
 
     val cycle = t1.toDoubleOrNull() ?: 0.0; val rate = (t2.toDoubleOrNull() ?: 0.0) / 100.0; val hours = t3.toDoubleOrNull() ?: 0.0
     val resTA = if (rate > 0) cycle / rate else 0.0
     val targetOutput = if (cycle > 0) (hours * 3600.0 / cycle) * rate else 0.0
     val resTC = if (hours > 0) targetOutput / hours else 0.0
-    
+
     val lO1 = o1.toDoubleOrNull() ?: 0.0; val lO2 = o2.toDoubleOrNull() ?: 0.0; val lO3 = o3.toDoubleOrNull() ?: 0.0
     val lO4 = o4.toDoubleOrNull() ?: 0.0; val lO5 = o5.toDoubleOrNull() ?: 0.0
     val timeRate = if (lO1 > 0) (lO2 / lO1) * 100 else 0.0
@@ -284,8 +310,8 @@ fun ProductivityPage() {
 
 @Composable
 fun PlanPage() {
-    var p1 by remember { mutableStateOf("18000") }; var p2 by remember { mutableStateOf("20") }
-    var p3 by remember { mutableStateOf("16") }; var p4 by remember { mutableStateOf("80") }
+    var p1 by rememberSaveable { mutableStateOf("18000") }; var p2 by rememberSaveable { mutableStateOf("20") }
+    var p3 by rememberSaveable { mutableStateOf("16") }; var p4 by rememberSaveable { mutableStateOf("80") }
     val target = p1.toDoubleOrNull() ?: 0.0; val days = p2.toDoubleOrNull() ?: 0.0
     val hours = p3.toDoubleOrNull() ?: 0.0; val rate = (p4.toDoubleOrNull() ?: 0.0) / 100.0
     val maxD = if (days > 0) target / days else 0.0; val realH = hours * rate
@@ -318,7 +344,7 @@ fun PlanPage() {
 
 @Composable
 fun TimeConverterPage() {
-    var totalSecs by remember { mutableStateOf(0.0) }
+    var totalSecs by rememberSaveable { mutableStateOf(0.0) }
     val units = listOf(
         Triple("日 (Days)", 86400.0, ColorAccent),
         Triple("時間 (Hours)", 3600.0, ColorAccent),
@@ -404,22 +430,21 @@ fun TimeChartPage() {
 
 @Composable
 fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
-    var x1 by remember { mutableStateOf("500") }; var y1 by remember { mutableStateOf("0") }; var z1 by remember { mutableStateOf("500") }
-    var w1 by remember { mutableStateOf("0") }; var p1 by remember { mutableStateOf("-90") }; var r1 by remember { mutableStateOf("0") }
-    var x2 by remember { mutableStateOf("") }; var y2 by remember { mutableStateOf("") }; var z2 by remember { mutableStateOf("") }
-    var w2 by remember { mutableStateOf("") }; var p2 by remember { mutableStateOf("") }; var r2 by remember { mutableStateOf("") }
-    var splitMode by remember { mutableStateOf("dist") }
-    var calcValue by remember { mutableStateOf("20") }; var points by remember { mutableStateOf(listOf<List<String>>()) }
-    var offDist by remember { mutableStateOf("50") }
+    var x1 by rememberSaveable { mutableStateOf("500") }; var y1 by rememberSaveable { mutableStateOf("0") }; var z1 by rememberSaveable { mutableStateOf("500") }
+    var w1 by rememberSaveable { mutableStateOf("0") }; var p1 by rememberSaveable { mutableStateOf("-90") }; var r1 by rememberSaveable { mutableStateOf("0") }
+    var x2 by rememberSaveable { mutableStateOf("") }; var y2 by rememberSaveable { mutableStateOf("") }; var z2 by rememberSaveable { mutableStateOf("") }
+    var w2 by rememberSaveable { mutableStateOf("") }; var p2 by rememberSaveable { mutableStateOf("") }; var r2 by rememberSaveable { mutableStateOf("") }
+    var splitMode by rememberSaveable { mutableStateOf("dist") }
+    var calcValue by rememberSaveable { mutableStateOf("20") }; var points by remember { mutableStateOf(listOf<List<String>>()) }
+    var offDist by rememberSaveable { mutableStateOf("50") }
 
-    var selectedUFIdx by remember { mutableStateOf(0) }
-    var selectedTFIdx by remember { mutableStateOf(0) }
+    var selectedUFIdx by rememberSaveable { mutableStateOf(0) }
+    var selectedTFIdx by rememberSaveable { mutableStateOf(0) }
     var showUFMenu by remember { mutableStateOf(false) }
     var showTFMenu by remember { mutableStateOf(false) }
-    
-    // 計算用スロット選択用（オフセット計算時に参照するスロット）
-    var selectedCalcUfSlot by remember { mutableStateOf(0) }
-    var selectedCalcTfSlot by remember { mutableStateOf(0) }
+
+    var selectedCalcUfSlot by rememberSaveable { mutableStateOf(0) }
+    var selectedCalcTfSlot by rememberSaveable { mutableStateOf(0) }
     var showCalcUfMenu by remember { mutableStateOf(false) }
     var showCalcTfMenu by remember { mutableStateOf(false) }
 
@@ -438,8 +463,7 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
         val d = (offDist.toDoubleOrNull() ?: 0.0) * sign
         val p1_x = x1.toDoubleOrNull() ?: 0.0; val p1_y = y1.toDoubleOrNull() ?: 0.0; val p1_z = z1.toDoubleOrNull() ?: 0.0
         val p1_w = w1.toDoubleOrNull() ?: 0.0; val p1_p = p1.toDoubleOrNull() ?: 0.0; val p1_r = r1.toDoubleOrNull() ?: 0.0
-        
-        // 指定されたスロットのマスタ座標を参照
+
         val master = if (mode == "user") masterUF[selectedCalcUfSlot].toRobotPoint() else masterTF[selectedCalcTfSlot].toRobotPoint()
 
         if (mode == "user") {
@@ -458,7 +482,6 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
         }
         Card(colors = CardDefaults.cardColors(containerColor = ColorCard)) {
             Column(modifier = Modifier.padding(12.dp)) {
-                // スロット読込Row
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.weight(1f)) {
                         Button(onClick = { showUFMenu = true }, modifier = Modifier.fillMaxWidth().height(45.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorInputBg)) {
@@ -479,11 +502,9 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
                 }
                 Text("始点 P1", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
                 CoordInputGrid(listOf(x1,y1,z1,w1,p1,r1)) { i,v -> when(i){0->x1=v;1->y1=v;2->z1=v;3->w1=v;4->p1=v;5->r1=v} }
-                
-                // --- 逃げ計算セクション ---
+
                 Box(Modifier.fillMaxWidth().padding(vertical = 12.dp).background(Color(0xFF252A30), RoundedCornerShape(12.dp)).border(2.dp, ColorPrimary, RoundedCornerShape(12.dp)).padding(12.dp)) {
                     Column {
-                        // 計算用スロット選択
                         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.weight(1f)) {
                                 OutlinedButton(onClick = { showCalcUfMenu = true }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, ColorBorder)) {
@@ -516,7 +537,7 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
 
                 Text("終点 P2", color = ColorText, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                 CoordInputGrid(listOf(x2,y2,z2,w2,p2,r2)) { i,v -> when(i){0->x2=v;1->y2=v;2->z2=v;3->w2=v;4->p2=v;5->r2=v} }
-                
+
                 Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { splitMode = "dist" }, modifier = Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = if(splitMode=="dist") ColorPrimary else ColorInputBg), border = BorderStroke(1.dp, ColorBorder), shape = RoundedCornerShape(8.dp)) { Text("間隔指定", color = ColorText, fontWeight = FontWeight.ExtraBold) }
                     Button(onClick = { splitMode = "num" }, modifier = Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = if(splitMode=="num") ColorPrimary else ColorInputBg), border = BorderStroke(1.dp, ColorBorder), shape = RoundedCornerShape(8.dp)) { Text("点数指定", color = ColorText, fontWeight = FontWeight.ExtraBold) }
@@ -549,25 +570,64 @@ fun CoordPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>) {
 }
 
 @Composable
+fun RowScope.CoordSingleInput(label: String, value: String, onValueChange: (String) -> Unit) {
+    // 1. 内部状態としてのテキストを保持（TextFieldValueを直接 remember(value) しないのがコツ！）
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(value)) }
+
+    // 2. 外部（スロット読込など）で数値が変わった時だけ、内部の数値を書き換える
+    LaunchedEffect(value) {
+        if (value != textFieldValue.text) {
+            textFieldValue = textFieldValue.copy(
+                text = value,
+                selection = TextRange(value.length) // カーソルを一番後ろに
+            )
+        }
+    }
+
+    Column(Modifier.weight(1f)) {
+        Text(label, fontSize = 10.sp, color = ColorLabel, fontWeight = FontWeight.Black)
+        OutlinedTextField(
+            value = textFieldValue,
+            onValueChange = {
+                // 文字が入力された時
+                textFieldValue = it
+                // 親のデータ（x1など）にも伝える
+                if (value != it.text) {
+                    onValueChange(it.text)
+                }
+            },
+            modifier = Modifier
+                .height(50.dp)
+                .onFocusChanged {
+                    // フォーカスが当たった時に全選択（現場で数値を上書きしやすくするため）
+                    if (it.isFocused) {
+                        textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length))
+                    }
+                },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg,
+                focusedTextColor = ColorText, unfocusedTextColor = ColorText,
+                focusedBorderColor = ColorPrimary, unfocusedBorderColor = ColorBorder
+            ),
+            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, color = ColorText),
+            singleLine = true
+        )
+    }
+}
+
+@Composable
 fun CoordInputGrid(values: List<String>, onUpdate: (Int, String) -> Unit) {
-    val labels = listOf("X","Y","Z","W","P","R")
+    val labels = listOf("X", "Y", "Z", "W", "P", "R")
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (0..2).forEach { i ->
-                Column(Modifier.weight(1f)) {
-                    Text(labels[i], fontSize = 10.sp, color = ColorLabel, fontWeight = FontWeight.Black)
-                    var textFieldValue by remember(values[i]) { mutableStateOf(TextFieldValue(values[i])) }
-                    OutlinedTextField(value = textFieldValue, onValueChange = { textFieldValue = it; onUpdate(i, it.text) }, modifier = Modifier.height(50.dp).onFocusChanged { if (it.isFocused) textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText), textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold), singleLine = true)
-                }
+                CoordSingleInput(labels[i], values[i]) { onUpdate(i, it) }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (3..5).forEach { i ->
-                Column(Modifier.weight(1f)) {
-                    Text(labels[i], fontSize = 10.sp, color = ColorLabel, fontWeight = FontWeight.Black)
-                    var textFieldValue by remember(values[i]) { mutableStateOf(TextFieldValue(values[i])) }
-                    OutlinedTextField(value = textFieldValue, onValueChange = { textFieldValue = it; onUpdate(i, it.text) }, modifier = Modifier.height(50.dp).onFocusChanged { if (it.isFocused) textFieldValue = textFieldValue.copy(selection = TextRange(0, textFieldValue.text.length)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText), textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold), singleLine = true)
-                }
+                CoordSingleInput(labels[i], values[i]) { onUpdate(i, it) }
             }
         }
     }
@@ -575,9 +635,11 @@ fun CoordInputGrid(values: List<String>, onUpdate: (Int, String) -> Unit) {
 
 @Composable
 fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdateUF: (List<MasterCoord>) -> Unit, onUpdateTF: (List<MasterCoord>) -> Unit) {
-    var selectedSlot by remember { mutableStateOf(0) }; var mName by remember { mutableStateOf("") }
-    var mx by remember { mutableStateOf("0") }; var my by remember { mutableStateOf("0") }; var mz by remember { mutableStateOf("0") }
-    var mw by remember { mutableStateOf("0") }; var mp by remember { mutableStateOf("0") }; var mr by remember { mutableStateOf("0") }
+    val context = LocalContext.current
+    var selectedSlot by rememberSaveable { mutableStateOf(0) }; var mName by rememberSaveable { mutableStateOf("") }
+    var mx by rememberSaveable { mutableStateOf("0") }; var my by rememberSaveable { mutableStateOf("0") }; var mz by rememberSaveable { mutableStateOf("0") }
+    var mw by rememberSaveable { mutableStateOf("0") }; var mp by rememberSaveable { mutableStateOf("0") }; var mr by rememberSaveable { mutableStateOf("0") }
+
     fun fill(slot: Int) { val d = masterUF[slot]; mName = d.name; mx=d.x; my=d.y; mz=d.z; mw=d.w; mp=d.p; mr=d.r }
 
     Column(modifier = Modifier.fillMaxSize().padding(10.dp).verticalScroll(rememberScrollState())) {
@@ -595,8 +657,15 @@ fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdat
                 TextField(value = mName, onValueChange = { mName = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), label = { Text("地点名称をここに入力", color = ColorLabel, fontWeight = FontWeight.Bold) }, colors = TextFieldDefaults.colors(focusedContainerColor = ColorInputBg, unfocusedContainerColor = ColorInputBg, focusedTextColor = ColorText, unfocusedTextColor = ColorText))
                 CoordInputGrid(listOf(mx,my,mz,mw,mp,mr)) { i,v -> when(i){0->mx=v;1->my=v;2->mz=v;3->mw=v;4->mp=v;5->mr=v} }
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { onUpdateUF(masterUF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) }) }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)) { Text("UFに保存", fontWeight = FontWeight.Black, color = ColorBg) }
-                    Button(onClick = { onUpdateTF(masterTF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) }) }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("TFに保存", fontWeight = FontWeight.Black, color = ColorText) }
+                    Button(onClick = {
+                        onUpdateUF(masterUF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) })
+                        Toast.makeText(context, "Slot $selectedSlot をUFに保存しました", Toast.LENGTH_SHORT).show()
+                    }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorAccent)) { Text("UFに保存", fontWeight = FontWeight.Black, color = ColorBg) }
+
+                    Button(onClick = {
+                        onUpdateTF(masterTF.toMutableList().also { it[selectedSlot] = MasterCoord(mName,mx,my,mz,mw,mp,mr) })
+                        Toast.makeText(context, "Slot $selectedSlot をTFに保存しました", Toast.LENGTH_SHORT).show()
+                    }, Modifier.weight(1f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = ColorDanger)) { Text("TFに保存", fontWeight = FontWeight.Black, color = ColorText) }
                 }
             }
         }
@@ -608,7 +677,7 @@ fun MasterPage(masterUF: List<MasterCoord>, masterTF: List<MasterCoord>, onUpdat
             }
         }
         Spacer(Modifier.height(24.dp))
-        Text(text = "Version 1.0.0", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ColorLabel, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        Text(text = "Version 1.0.2", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ColorLabel, fontSize = 14.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(60.dp))
     }
 }
