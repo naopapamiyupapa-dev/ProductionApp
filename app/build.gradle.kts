@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.genba"
         minSdk = 30
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.1.1"
+        versionCode = (System.currentTimeMillis() / 1000).toInt()
+        versionName = "1.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
